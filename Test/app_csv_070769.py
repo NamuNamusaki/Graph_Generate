@@ -27,13 +27,13 @@ def get_display_names(sheet_name):
     #display_name = f"{group_label} ({enz_count} Enzyme{'s' if enz_count != '1' else ''})"
 
     if group_label == "Group 1":
-        display_name = "Group 1 - Exact Match"
+        display_name = "Group 1"
     elif group_label == "Group 2":
-        display_name = "Group 2 - Shorter Match"
+        display_name = "Group 2"
     elif group_label == "Group 3a":
-        display_name = "Group 3a - Longer Match (Single Functional Domain)"
+        display_name = "Group 3a"
     elif group_label == "Group 3b":
-        display_name = "Group 3b - Longer Match (Multiple Functional Domains)"
+        display_name = "Group 3b"
 
     return display_name
 
@@ -62,6 +62,7 @@ def generate_dashboard_chart (file_paths,chart_type):
             continue
         
         # 4 Data Processing
+        grouped_df = df.groupby('Bioactivity', as_index=False)['nPepSeq'].sum()  # Group by 'Bioactivity' and sum 'nPepSeq'
         total_peptides = df['nPepSeq'].sum()
         plot_df = df.sort_values(by='nPepSeq', ascending=False).copy() # Group by 'Bioactivity' and sum 'nPepSeq', then sort
 
@@ -70,48 +71,101 @@ def generate_dashboard_chart (file_paths,chart_type):
         plot_df['Hover_Combined'] = plot_df['Hover_Percentage'] + plot_df['Hover_Details']
 
         formatted_total = f"{total_peptides:,}"
-
+        total_rows = len(plot_df) # Count the exact number of the group of Bioactivity
+        
         # -------------- Dashboard -----------------------
         with col:
             with st.container(border=True):
                 st.subheader(f" {display_sheet_name}")
 
+                # Dropdown to filter each chart by Bioactivity Rank
+                dropdown_option = ["Top 10"]
+                if total_rows > 20:
+                    dropdown_option.append("Top 20")
+                if total_rows > 50:
+                    dropdown_option.append("Top 50")
+
+                dropdown_option.append(f"All ({total_rows})")
+
+                top_n_option = st.selectbox(
+                    "Show Bioactivities:",
+                    options=dropdown_option,
+                    index=0,
+                    key=f"top_n_{display_sheet_name}"
+                )
+
+                if "All" in top_n_option:
+                    filtered_df = plot_df
+                    #chart_height = max(400, total_rows * 25)
+                else:
+                    n = int(top_n_option.split()[1])
+                    filtered_df = plot_df.head(n)
+                    #chart_height = 400
+
+
+                # Bar Chart and Pie Chart Generation
                 if chart_type == "Bar Chart":
-                   # dynamic_height = max(400, len(plot_df) * 30)
-                    fig_bar = px.bar(plot_df, 
+                    #dynamic_height = max(400, len(plot_df) * 30)
+                    fig_bar = px.bar(filtered_df, 
                                     x='nPepSeq', 
                                     y='Bioactivity', 
                                     log_x=True,      # The Y-axis now scales by percentage
                                     text='nPepSeq',
+                                    color='nPepSeq',
+                                    color_continuous_scale='Blues',
                                     custom_data=['Hover_Percentage', 'Hover_Details'],  # Include the hover data for percentage and details
                                     orientation='h',
                                     title=f'{display_sheet_name} | Total Peptide Sequences: {formatted_total}',
-                                    height=400)
+                                    height=450)
 
                     fig_bar.update_traces(textposition='inside',
                                           hovertemplate='<b>%{y}</b><br>Count: %{x}<br>Percentage: %{customdata[0]}%{customdata[1]}<extra></extra>')
                     fig_bar.update_layout(
-                                        yaxis=dict(autorange="reversed", title='Bioactivity'),
+                                        yaxis=dict(autorange="reversed", title='Bioactivities'),
                                         xaxis=dict(title='Count of Peptide Sequences (Log Scale)'),
-                                        margin = dict(l=0, r=0, t=30, b=10)
+                                        margin = dict(l=0, r=0, t=30, b=10),
+                                        coloraxis_showscale=False
                                         )
                     
                     st.plotly_chart(fig_bar, use_container_width=True)
 
-                # 6 Generate the Pie Chart
                 else:
-                    fig_pie = px.pie(plot_df, 
+                    # 6 Generate the Pie Chart
+                    if len(filtered_df) > 10:
+                        pie_top = filtered_df.head(10).copy()
+                        pie_rest = filtered_df.iloc[10:]
+                        other_sum = pie_rest['nPepSeq'].sum()
+                        other_row = pd.DataFrame({
+                            'Bioactivity': ['Other'], 
+                            'nPepSeq': [other_sum], 
+                            'Hover_Percentage': ['']
+                            })
+                        pie_df = pd.concat([pie_top, other_row], ignore_index=True)
+                    else:
+                        pie_df = filtered_df.copy()
+
+                    fig_pie = px.pie(pie_df, 
                                     values='nPepSeq', 
                                     names='Bioactivity', 
                                     hover_name='Bioactivity',
+                                    hole=0.4,  # Creates a donut chart
                                     custom_data=['Hover_Combined'],  # Include the combined hover data
                                     title=f'{display_sheet_name} | Total Peptide Sequences: {formatted_total}',
-                                    height=400)
+                                    height=450)
                 
                     fig_pie.update_traces(textposition='inside', 
                                     textinfo='percent+label',
                                     hovertemplate='<b>%{label}</b><br>Count: %{value}<br>%{customdata[0]}<extra></extra>')
-                    fig_pie.update_layout(margin = dict(l=0, r=0, t=30, b=10))
+                    fig_pie.update_layout(margin = dict(l=0, r=0, t=30, b=10),
+                                          uniformtext_minsize=12, 
+                                          uniformtext_mode='hide',
+                                          legend=dict(
+                                            orientation="h",
+                                            yanchor="top",
+                                            y=-0.1,
+                                            xanchor="center",
+                                            x=0.5
+                                          ))
                 
                     st.plotly_chart(fig_pie, use_container_width=True)
 
@@ -126,6 +180,7 @@ def create_sum_table(file_paths):
     for file in file_paths:
         raw_name = file.name.replace('.csv', '')
         display_sheet_name = get_display_names(raw_name)  # Use the regex function to extract the sheet name
+        file.seek(0)
 
         df = pd.read_csv(file)  # Read the CSV file into a DataFrame
 
