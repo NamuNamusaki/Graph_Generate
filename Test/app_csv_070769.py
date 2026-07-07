@@ -26,16 +26,18 @@ def get_display_names(sheet_name):
     group_label = f"Group {group_num}{sub_letter}"
     #display_name = f"{group_label} ({enz_count} Enzyme{'s' if enz_count != '1' else ''})"
 
-    if group_label == "Group 1":
-        display_name = "Group 1"
-    elif group_label == "Group 2":
-        display_name = "Group 2"
-    elif group_label == "Group 3a":
-        display_name = "Group 3a"
-    elif group_label == "Group 3b":
-        display_name = "Group 3b"
+    return group_label
 
-    return display_name
+
+def map_group_detail(sheet_name):
+    detail_mapping = {
+        "Group 1": "Exact Match",
+        "Group 2": "Shorter Match",
+        "Group 3a": "Longer Match (Single Functional Domain)",
+        "Group 3b": "Longer Match (Multiple Functional Domains)"
+    }
+    return detail_mapping.get(sheet_name, "")
+
 
 def generate_dashboard_chart (file_paths,chart_type):
     """
@@ -51,7 +53,8 @@ def generate_dashboard_chart (file_paths,chart_type):
         
         # 2 Extract the display name from the file name
         raw_name = file.name.replace('.csv', '')  # Remove the .csv extension
-        display_sheet_name = get_display_names(raw_name)  # Use the regex function to extract the display name
+        group_name = get_display_names(raw_name)  # Use the regex function to extract the display name
+        group_detail = map_group_detail(group_name)
         
         # 3 read csv file
         df = pd.read_csv(file)  # Read the CSV file into a DataFrame
@@ -76,7 +79,7 @@ def generate_dashboard_chart (file_paths,chart_type):
         # -------------- Dashboard -----------------------
         with col:
             with st.container(border=True):
-                st.subheader(f" {display_sheet_name}")
+                st.subheader(f" {group_name}")
 
                 # Dropdown to filter each chart by Bioactivity Rank
                 dropdown_option = ["Top 10"]
@@ -90,8 +93,9 @@ def generate_dashboard_chart (file_paths,chart_type):
                 top_n_option = st.selectbox(
                     "Show Bioactivities:",
                     options=dropdown_option,
+                    width=200,
                     index=0,
-                    key=f"top_n_{display_sheet_name}"
+                    key=f"top_n_{group_name}"
                 )
 
                 if "All" in top_n_option:
@@ -115,7 +119,7 @@ def generate_dashboard_chart (file_paths,chart_type):
                                     color_continuous_scale='Blues',
                                     custom_data=['Hover_Percentage', 'Hover_Details'],  # Include the hover data for percentage and details
                                     orientation='h',
-                                    title=f'{display_sheet_name} | Total Peptide Sequences: {formatted_total}',
+                                    title=f'{group_detail} | Total Peptide Sequences: {formatted_total}',
                                     height=450)
 
                     fig_bar.update_traces(textposition='inside',
@@ -150,11 +154,12 @@ def generate_dashboard_chart (file_paths,chart_type):
                                     hover_name='Bioactivity',
                                     hole=0.4,  # Creates a donut chart
                                     custom_data=['Hover_Combined'],  # Include the combined hover data
-                                    title=f'{display_sheet_name} | Total Peptide Sequences: {formatted_total}',
+                                    title=f'{group_detail} | Total Peptide Sequences: {formatted_total}',
                                     height=450)
                 
                     fig_pie.update_traces(textposition='inside', 
                                     textinfo='percent+label',
+                                    direction = 'clockwise',
                                     hovertemplate='<b>%{label}</b><br>Count: %{value}<br>%{customdata[0]}<extra></extra>')
                     fig_pie.update_layout(margin = dict(l=0, r=0, t=30, b=10),
                                           uniformtext_minsize=12, 
@@ -207,7 +212,7 @@ if uploaded_files:
     with col_select:
         chart_type = st.selectbox(
             "Select Chart Type",
-            options=["Bar Chart", "Pie Chart"],
+            options=["Pie Chart","Bar Chart"],
             index=0,
         )
     #get_display_names(uploaded_files.name)  # Call the function to extract and display the sheet name
