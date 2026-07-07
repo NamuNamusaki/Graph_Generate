@@ -65,7 +65,7 @@ def generate_dashboard_chart (file_paths,chart_type):
         total_peptides = df['nPepSeq'].sum()
         plot_df = df.sort_values(by='nPepSeq', ascending=False).copy() # Group by 'Bioactivity' and sum 'nPepSeq', then sort
 
-        plot_df['Hover_percentage'] = ((plot_df['nPepSeq'] / total_peptides) * 100).round(2).astype(str) + '%'
+        plot_df['Hover_Percentage'] = ((plot_df['nPepSeq'] / total_peptides) * 100).round(2).astype(str) + '%'
         plot_df['Hover_Details'] = ""
         plot_df['Hover_Combined'] = plot_df['Hover_Percentage'] + plot_df['Hover_Details']
 
