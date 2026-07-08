@@ -31,8 +31,8 @@ def check_password():
     else:
         return True
 
-if not check_password():
-    st.stop()
+#if not check_password():
+#    st.stop()
 
 #Result Part
 st.title("Peptide Sequence Bioactivity Dashboard")
