@@ -98,33 +98,32 @@ def generate_dashboard_chart (file_paths,chart_type):
 
                 total_rows = len(plot_df) # Count the exact number of the group of Bioactivity
 
-                # Dropdown to filter each chart by Bioactivity Rank
-                dropdown_option = ["Top 10"]
-                if total_rows > 20:
-                    dropdown_option.append("Top 20")
-                if total_rows > 50:
-                    dropdown_option.append("Top 50")
-
-                dropdown_option.append(f"All ({total_rows})")
-
-                top_n_option = st.selectbox(
-                    "Show Bioactivities:",
-                    options=dropdown_option,
-                    width=200,
-                    index=0,
-                    key=f"top_n_{group_name}"
-                )
-
-                if "All" in top_n_option:
-                    filtered_df = filtered_df
-                else:
-                    n = int(top_n_option.split()[1])
-                    final_df = filtered_df.head(n)
-                    #chart_height = 400
-
 
                 # Bar Chart and Pie Chart Generation
                 if chart_type == "Bar Chart":
+                                    # Dropdown to filter each chart by Bioactivity Rank
+                    dropdown_option = ["Top 10"]
+                    if total_rows > 20:
+                        dropdown_option.append("Top 20")
+                    if total_rows > 50:
+                        dropdown_option.append("Top 50")
+
+                    dropdown_option.append(f"All ({total_rows})")
+
+                    top_n_option = st.selectbox(
+                        "Show Bioactivities:",
+                        options=dropdown_option,
+                        width=200,
+                        index=0,
+                        key=f"top_n_{group_name}"
+                    )
+
+                    if "All" in top_n_option:
+                        final_df = filtered_df
+                    else:
+                        n = int(top_n_option.split()[1])
+                        final_df = filtered_df.head(n)
+                        #chart_height = 400
                     #dynamic_height = max(400, len(plot_df) * 30)
                     fig_bar = px.bar(final_df, 
                                     x='nPepSeq', 
@@ -152,8 +151,8 @@ def generate_dashboard_chart (file_paths,chart_type):
                 else:
                     # 6 Generate the Pie Chart
                     if len(filtered_df) > 10:
-                        pie_top = final_df.head(9).copy()
-                        pie_rest = final_df.iloc[9:]
+                        pie_top = filtered_df.head(9).copy()
+                        pie_rest = filtered_df.iloc[9:]
                         other_sum = pie_rest['nPepSeq'].sum()
                         other_row = pd.DataFrame({
                             'Bioactivity': ['Other'], 
@@ -162,7 +161,7 @@ def generate_dashboard_chart (file_paths,chart_type):
                             })
                         pie_df = pd.concat([pie_top, other_row], ignore_index=True)
                     else:
-                        pie_df = final_df.copy()
+                        pie_df = filtered_df.copy()
 
                     fig_pie = px.pie(pie_df, 
                                     values='nPepSeq', 
