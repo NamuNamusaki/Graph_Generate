@@ -6,6 +6,9 @@ import streamlit as st
 import re
 
 st.set_page_config(page_title="Result Dashboard", layout="wide")
+
+
+#Result Part
 st.title("Peptide Sequence Bioactivity Dashboard")
 st.markdown("Upload your CSV files.")
 
