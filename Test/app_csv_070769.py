@@ -44,17 +44,20 @@ def generate_dashboard_chart (file_paths,chart_type):
     Iterates through a list of Excel files, opens EVERY sheet inside them, 
     and generates Bar and Pie charts for sheets.
     """
+    # Create Column
+    col_L, col_R = st.columns(2)
+
     # 1 loop through every csv file
-    for i,file in enumerate(file_paths):            
-        # Build the grid for each sheet
-        if i % 2 == 0:
-            cols = st.columns(2)
-        col = cols[i % 2] #ใส่ข้อมูลแต่ละคอลัมน์ใน grid (ซ้าย/ขวา)
-        
+    for file in file_paths:            
         # 2 Extract the display name from the file name
         raw_name = file.name.replace('.csv', '')  # Remove the .csv extension
         group_name = get_display_names(raw_name)  # Use the regex function to extract the display name
         group_detail = map_group_detail(group_name)
+
+        if "Group 1" in group_name or "Group 2" in group_name:
+            col = col_L   # Stacks vertically on the left side
+        else:
+            col = col_R  # Stacks vertically on the right side
         
         # 3 read csv file
         df = pd.read_csv(file)  # Read the CSV file into a DataFrame
@@ -72,14 +75,28 @@ def generate_dashboard_chart (file_paths,chart_type):
         plot_df['Hover_Percentage'] = ((plot_df['nPepSeq'] / total_peptides) * 100).round(2).astype(str) + '%'
         plot_df['Hover_Details'] = ""
         plot_df['Hover_Combined'] = plot_df['Hover_Percentage'] + plot_df['Hover_Details']
-
         formatted_total = f"{total_peptides:,}"
-        total_rows = len(plot_df) # Count the exact number of the group of Bioactivity
         
         # -------------- Dashboard -----------------------
         with col:
             with st.container(border=True):
                 st.subheader(f" {group_name}")
+
+                # Multiselect Filter
+                all_bioactivities = plot_df['Bioactivity'].tolist()
+                select_bioac = st.multiselect(
+                    "Search & Filter Bioactivities:",
+                    options=all_bioactivities,
+                    default=[],
+                    key=f"select_bioac_{group_name}"
+                )
+                # Apply Multiselect
+                if select_bioac:
+                    filtered_df = plot_df[plot_df['Bioactivity'].isin(select_bioac)]
+                else:
+                    filtered_df = plot_df.copy()
+
+                total_rows = len(plot_df) # Count the exact number of the group of Bioactivity
 
                 # Dropdown to filter each chart by Bioactivity Rank
                 dropdown_option = ["Top 10"]
@@ -99,18 +116,17 @@ def generate_dashboard_chart (file_paths,chart_type):
                 )
 
                 if "All" in top_n_option:
-                    filtered_df = plot_df
-                    #chart_height = max(400, total_rows * 25)
+                    filtered_df = filtered_df
                 else:
                     n = int(top_n_option.split()[1])
-                    filtered_df = plot_df.head(n)
+                    final_df = filtered_df.head(n)
                     #chart_height = 400
 
 
                 # Bar Chart and Pie Chart Generation
                 if chart_type == "Bar Chart":
                     #dynamic_height = max(400, len(plot_df) * 30)
-                    fig_bar = px.bar(filtered_df, 
+                    fig_bar = px.bar(final_df, 
                                     x='nPepSeq', 
                                     y='Bioactivity', 
                                     log_x=True,      # The Y-axis now scales by percentage
@@ -136,8 +152,8 @@ def generate_dashboard_chart (file_paths,chart_type):
                 else:
                     # 6 Generate the Pie Chart
                     if len(filtered_df) > 10:
-                        pie_top = filtered_df.head(10).copy()
-                        pie_rest = filtered_df.iloc[10:]
+                        pie_top = final_df.head(9).copy()
+                        pie_rest = final_df.iloc[9:]
                         other_sum = pie_rest['nPepSeq'].sum()
                         other_row = pd.DataFrame({
                             'Bioactivity': ['Other'], 
@@ -146,13 +162,13 @@ def generate_dashboard_chart (file_paths,chart_type):
                             })
                         pie_df = pd.concat([pie_top, other_row], ignore_index=True)
                     else:
-                        pie_df = filtered_df.copy()
+                        pie_df = final_df.copy()
 
                     fig_pie = px.pie(pie_df, 
                                     values='nPepSeq', 
                                     names='Bioactivity', 
                                     hover_name='Bioactivity',
-                                    hole=0.4,  # Creates a donut chart
+                                    #hole=0.4,  # Creates a donut chart
                                     custom_data=['Hover_Combined'],  # Include the combined hover data
                                     title=f'{group_detail} | Total Peptide Sequences: {formatted_total}',
                                     height=450)
