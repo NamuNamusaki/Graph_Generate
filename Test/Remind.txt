@@ -1,0 +1,3 @@
+app_excel.py => นำเข้าไฟล์ excel -> read trough sheet and extract data
+app.py_070769.py => นำเข้าไฟล์ .csv -> อ่านไฟล์ทั้ง4 ของใน organism นั้น แล้ว report ออกมาเป็น graph
+app.py_080769.py => เอามาใส่ password เพื่อ deploy
