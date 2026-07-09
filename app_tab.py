@@ -177,10 +177,10 @@ def summary_tab(present_groups: list, group_data: dict,group_total:dict):
                     st.plotly_chart(fig, use_container_width=True,
                                     key=f"summary_pie_{g}")
                     
-    render_statistics_table(present_groups, group_data)
+    render_statistics_table(present_groups, group_total)
 
 # Create Table Function
-def render_statistics_table(present_groups: list, group_data: dict):
+def render_statistics_table(present_groups: list, group_totals: dict):
     """
     Creates a summary table for all uploaded Excel files, 
     showing the total peptide sequences for each sheet.
@@ -192,7 +192,7 @@ def render_statistics_table(present_groups: list, group_data: dict):
         enzyme    = c2.text_input("Enzyme",           value="")
         n_proteins = c3.text_input("nProteins (input)", value="")
  
-    n_peptides_total = sum(group_data.values())
+    n_peptides_total = sum(group_totals.values())
     rows = [
         {"Parameter": "Organism",            "Value": organism  or "—"},
         {"Parameter": "Enzyme",              "Value": enzyme    or "—"},
@@ -202,7 +202,7 @@ def render_statistics_table(present_groups: list, group_data: dict):
     for g in present_groups:
         rows.append({
             "Parameter": f"{g} — {GROUP_DETAIL.get(g, g)}",
-            "Value":     f"{group_data[g]:,}",
+            "Value":     f"{group_totals[g]:,}",
         })
  
     st.dataframe(
