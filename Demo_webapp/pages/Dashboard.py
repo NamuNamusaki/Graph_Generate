@@ -255,13 +255,108 @@ def create_sum_table(file_paths):
 
 def render_group_tab(group_name,file):
     # For render each group detail
-    st.header(f'Detail Analysis: {group_name}')
-    st.info(f'Custom Data table')
+    group_detail = map_group_detail(group_name)
+    st.header(f'Detail Analysis: {group_name} {group_detail}')
+    # Limit the Display
+    limit_key = f'limit_{group_name}'
+    if limit_key not in st.session_state:
+        st.session_state[limit_key] = 10
+    # Identify Correct File
+    target_file = None
+    for f in file:
+        if get_display_names(f) == group_name:
+            target_file = f
+            break
+    if target_file is None:
+        st.info(f"No data in {group_name}.")
+        return
+    #Load Data
+    df, _, _ = load_prep_data(target_file)
+    if df is None:
+        st.error("Error reading uploaded data.")
+        return
 
+    # Get a list of unique bioactivities found in the uploaded CSV
+    #group_detail = map_group_detail(group_name)
+    #short_id = group_name.replace('Group','G')    
+    #st.markdown(f"#### 🟢 **{short_id}** {group_detail} — Bioactivity Summary")
+
+    # Create Table header
+    h1, h2, h3, h4, h5 = st.columns([0.5, 3, 1.5, 1.5, 1.5])
+    with h1: st.markdown("#",unsafe_allow_html=True)
+    with h2: st.markdown("Bioactivity",unsafe_allow_html=True)
+    with h3: st.markdown("Count",unsafe_allow_html=True)
+    with h4: st.markdown("CSV Download",unsafe_allow_html=True)
+    with h5: st.markdown("PARQUET Download",unsafe_allow_html=True)
+
+    st.markdown("<hr style='margin-bottom: 10px; margin-top: 5px;'>", unsafe_allow_html=True)
+
+    # Create Row from data
+    df = df.reset_index(drop=True)
+    total_rows = len(df)
+    current_limit = st.session_state[limit_key]
+    
+    df_to_display = df.head(current_limit)
+
+    for index, row in df_to_display.iterrows():
+        bioactivity = row['Bioactivity']
+        count = row['nPepSeq']
+        
+        c1,c2,c3,c4,c5 = st.columns([0.5, 3, 1.5, 1.5, 1.5])
+        with c1:
+            st.markdown(f'{index+1}.',unsafe_allow_html=True)
+        with c2:
+            st.markdown(bioactivity,unsafe_allow_html=True)
+        with c3:
+            st.markdown(count,unsafe_allow_html=True)
+        with c4:
+            interesed_list =st.session_state.get('Interested_Bioactivity',[])
+            lower_bioac = bioactivity.lower()
+            if bioactivity in interesed_list:
+                file_path = get_sequence_path(group_name,bioactivity)
+                if file_path and os.path.exists(file_path):
+                    with open(file_path, 'rb') as f:
+                        csv_data = f.read()
+                    st.download_button(
+                        label="Download CSV",
+                        data=csv_data,
+                        file_name=f"{bioactivity}.csv",
+                        mime="text/csv",
+                        key=f"dl_csv_{group_name}_{index}"
+                    )
+                else:
+                    st.markdown('No File',unsafe_allow_html=True)
+            else: 
+                st.markdown('-',unsafe_allow_html=True) #ถ้าไม่ได้อยู่ในที่ user เลือกจะไม่แสดงปุ่มโหลด
+        with c5:
+            st.markdown('-')
+        st.markdown("<hr style='margin-bottom: 10px; margin-top: 5px;'>", unsafe_allow_html=True)
+    if total_rows > current_limit:
+        col_space1, col_space2,col_btn = st.columns([2, 2, 1])
+        with col_btn:
+            if current_limit == 10:
+                if st.button('See more', key=f'btn_more_{group_name}'):
+                    st.session_state[limit_key] = 20
+                    st.rerun()
+            elif current_limit == 20:
+                if st.button('See more', key=f'btn_more_{group_name}'):
+                    st.session_state[limit_key] = 50
+                    st.rerun()
+
+    
 def reder_ml_tab():
     st.header("ML Prediction")
     st.info("the Ml prediction result")
 
+# Get Sequence File function
+def get_sequence_path(group_name,bioactivity_name):
+    BASE_DIR = 'Result_Sequence'
+    target_folder = group_name.replace("Group ", "ResultG")
+    file_path = os.path.join(BASE_DIR, target_folder, f"{bioactivity_name}.csv")
+    return file_path
+
+
+# Tab Name Define
 st.title("Peptide Sequence Bioactivity Dashboard")
 tab_titles = ["Summary", "Group 1", "Group 2", "Group 3a", "Group 3b", "ML Prediction"]
 tabs = st.tabs(tab_titles)
