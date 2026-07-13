@@ -25,12 +25,13 @@ st.divider()
 clevage_enz = st.selectbox('select one enzyme for insilico digestion', options=['Trypsin','Pepsin'])
 miss_cle = st.selectbox('Maximum missed cleavage sites allowed per peptide (Default: 4)',option=['0','1','2','3'])
 
+all_bioactivities = uploaded_files['Bioactivity'].tolist()
 bioac_search = st.multiselect(
                         "Select Bioactivities:",
                     options=all_bioactivities,
                     default=[],
-                    key=f"select_bioac_{group_name}"
 )
+
 ml_pred = st.multiselect('Applied to peptides with unknown bioactivity (Group 4)')
 
 if st.button('SUBMIT', type ='primary'):
