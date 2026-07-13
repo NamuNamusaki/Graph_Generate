@@ -51,32 +51,32 @@ if st.button('SUBMIT', type ='primary'):
             st.session_state['Interested_Bioactivity'] = cleaned_list
         else:
             st.session_state['Interested_Bioactivity'] = []
-        
-    submission_load = {
-        'username' : st.session_state.get('username'),
-        'project_name': project_name,
-        'sample_name': sample_name,
-        'organism': organism,
-        'research_name': research_name,
-        'institute': institute,
-        'description': description,
-    }
-    st.session_state['current_submission'] = submission_load
-    json_payload = json.dump(submission_load)
-    api_url = 'http://localhost:8501/api/saved_sample'
-    headers = {'Content-Type': 'application/json'}
+        submission_load = {
+            'username' : st.session_state.get('username'),
+            'project_name': project_name,
+            'sample_name': sample_name,
+            'organism': organism,
+            'research_name': research_name,
+            'institute': institute,
+            'description': description,
+        }
+        st.session_state['current_submission'] = submission_load
+        st.session_state['processinf_complete'] = False
+        st.switch_page('pages/Waiting.py')
+    else:
+        st.error('Please Upload at least one file')    
+    #json_payload = json.dump(submission_load)
+    #api_url = 'http://localhost:8501/api/saved_sample'
+    #headers = {'Content-Type': 'application/json'}
 
-    try:
+    '''try:
         response = requests.post(api_url, data=json_payload, headers=headers)
         if response.status_code != 200:
             st.toast("Warning: Could not save data to backend, but continuing analysis.")
     except requests.exceptions.RequestException as e:
-        st.toast(f'backend connection Fail: {e}')
+        st.toast(f'backend connection Fail: {e}')'''
     
-    st.session_state['processinf_complete'] = False
-    st.switch_page['pages/Waiting.py']
-else:
-    st.error('Please Upload at least one file')
+
 
     '''if uploaded_files:
         st.session_state['uploaded_files'] = uploaded_files

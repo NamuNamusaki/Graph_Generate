@@ -291,7 +291,10 @@ def render_group_tab(group_name,file):
 
     st.markdown("<hr style='margin-bottom: 10px; margin-top: 5px;'>", unsafe_allow_html=True)
 
-    # Create Row from data
+    # Sort Datainthetable
+    interesed_list =st.session_state.get('Interested_Bioactivity',[])
+    df['is_prior'] = df['Bioactivity'].str.lower().isin(interesed_list)
+    df = df.sort_values(by=['is_prior', 'nPepSeq'], ascending=[False, False])
     df = df.reset_index(drop=True)
     total_rows = len(df)
     current_limit = st.session_state[limit_key]
@@ -312,7 +315,7 @@ def render_group_tab(group_name,file):
         with c4:
             interesed_list =st.session_state.get('Interested_Bioactivity',[])
             lower_bioac = bioactivity.lower()
-            if bioactivity in interesed_list:
+            if lower_bioac in interesed_list:
                 file_path = get_sequence_path(group_name,bioactivity)
                 if file_path and os.path.exists(file_path):
                     with open(file_path, 'rb') as f:
@@ -364,18 +367,13 @@ tabs = st.tabs(tab_titles)
 # Route to appropriate render function based on selected tab
 with tabs[0]:
     summary_dashboard(uploaded_files)
-    
 with tabs[1]:
     render_group_tab("Group 1", uploaded_files)
-    
 with tabs[2]:
     render_group_tab("Group 2", uploaded_files)
-    
 with tabs[3]:
     render_group_tab("Group 3a", uploaded_files)
-    
 with tabs[4]:
     render_group_tab("Group 3b", uploaded_files)
-    
 with tabs[5]:
     reder_ml_tab()
