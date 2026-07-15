@@ -20,9 +20,9 @@ if not st.session_state.get('uploaded_files') and not st.session_state.get('raw_
 #uploaded_files = st.session_state.get('uploaded_files', [])
 
 # Helper Function
-def get_display_names(file):
+def get_display_names(file_name):
     #Extracts the sheet name using regex.
-    raw_name = file.name.replace('.csv', '')  # Remove the .csv extension
+    raw_name = file_name.replace('.csv', '')  # Remove the .csv extension (if using the file fromapi or upload usinf.name instead)
     pattern = r'^RankBioactivity_G(\d+)([a-z]?)(?:_(\d+)Enz)?(?:_(.+))?$'
     match = re.match(pattern, raw_name)
     # Error Handling
@@ -44,7 +44,7 @@ def map_group_detail(file):
 
 @st.cache_data(show_spinner=False) # Cache for speed
 def load_prep_data(file):
-    file.seek(0)
+    #file.seek(0)
     df = pd.read_csv(file)
     if 'nPepSeq' not in df.columns or 'Bioactivity' not in df.columns:
         return None,0,"0"
@@ -191,19 +191,23 @@ def summary_dashboard(csv_path):
                     st.plotly_chart(fig, use_container_width=True)
     create_sum_table(csv_path)
 
-
 def create_sum_table(csv_paths):
     """
     Creates a summary table for all uploaded Excel files, 
     showing the total peptide sequences for each sheet.
     """
-    st.markdown("## 📈 Statistical Summary")
-    summary_data = []
+    st.markdown("## Project Detail & Statistical Summary")
+    summary_data = {
+        'Organism': st.session_state.get('organism','N/A'),
+        'Clevage Enzyme': st.session_state.get('clevage_enz','-'),
+        'Missed Cleavages': st.session_state.get('miss_cle','-'),
+    }
 
     for file in csv_paths:
         #raw_name = file.name.replace('.csv', '')
         file_name = os.path.basename(file)
         display_sheet_name = get_display_names(file_name)  # Use the regex function to extract the sheet name
+        group_detail = map_group_detail(display_sheet_name)
         df = pd.read_csv(file)  # Read the CSV file into a DataFrame
 
         if 'nPepSeq' not in df.columns:
@@ -211,15 +215,10 @@ def create_sum_table(csv_paths):
             continue
         
         total_peptides = df['nPepSeq'].sum()
-        summary_data.append({
-            "Sheet Name": display_sheet_name,
-            "Total Peptide Sequences": total_peptides
-        })
-    if summary_data:
-        summary_df = pd.DataFrame(summary_data)
-        st.dataframe(summary_df, width="stretch", hide_index=True,
-                 column_config={"Total Peptide Sequences": st.column_config.NumberColumn(
-                     alignment="left")})
+        summary_data[f"{display_sheet_name} {group_detail}"] = f"{total_peptides:,}"
+    details_df = pd.DataFrame(list(summary_data.items()), columns=["Parameter", "Detail"])
+    st.table(details_df)
+    st.markdown("<hr style='margin-bottom: 20px; margin-top: 10px;'>", unsafe_allow_html=True)
              
 
 def render_group_tab(group_name,csv_file):
@@ -233,7 +232,8 @@ def render_group_tab(group_name,csv_file):
     # Identify Correct File
     target_file = None
     for f in csv_file:
-        if get_display_names(f) == group_name:
+        file_name_only = os.path.basename(f)
+        if get_display_names(file_name_only) == group_name:
             target_file = f
             break
     if target_file is None:

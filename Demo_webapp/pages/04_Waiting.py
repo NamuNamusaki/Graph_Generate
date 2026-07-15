@@ -3,6 +3,8 @@ import time
 
 st.set_page_config(page_title="Waiting", layout="centered")
 
+
+
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 if "uploaded_files" not in st.session_state:
@@ -21,7 +23,7 @@ if not st.session_state["logged_in"]:
 
 if not st.session_state["uploaded_files"] and not st.session_state["raw_sequence"]:
     st.warning("⚠️ No files detected for processing.")
-    st.switch_page("pages/Upload.py")
+    st.switch_page("pages/03_Upload.py")
 
 st.title('Processing Data')
 st.markdown('Data Submitted Successffully')
@@ -45,4 +47,4 @@ if not st.session_state['processing_complete']:
 if st.session_state['processing_complete']:
     st.success('Analysis Complete Your Data is Ready')
     if st.button('View your result',type='primary',use_container_width=True):
-        st.switch_page('pages/Dashboard.py')
+        st.switch_page('pages/05_Dashboard.py')

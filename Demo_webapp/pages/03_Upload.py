@@ -65,11 +65,10 @@ if st.session_state['upload_step'] == 1:
         raw_sequence = st.text_area("or Upload Your Sequence Here")
     
     if st.button('Review Submission',type='primary',use_container_width=True):
-        st.write("DEBUG:", "Project:", project_name, "| Sample:", sample_name, "| ML:", ml_pred, "| File:", uploaded_files)
         if not project_name or not sample_name:
             st.error('Please fill in both the Project Name and Sample Name.')
         elif not ml_pred:
-            st.error('Please select at least one NL prediction option.')
+            st.error('Please select at least one ML prediction option.')
         elif not uploaded_files and not raw_sequence:
             st.error('Please upload FASTA file.')
         else:
@@ -127,7 +126,7 @@ elif st.session_state['upload_step'] == 2:
         if st.button('Confirm and Process',type='primary'):
             st.session_state['process_complete'] = False
             st.session_state['upload_step'] = 1
-            st.switch_page('pages/Waiting.py')
+            st.switch_page('pages/04_Waiting.py')
 
     
     #json_payload = json.dump(submission_load)

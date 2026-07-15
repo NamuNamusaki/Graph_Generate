@@ -15,7 +15,7 @@ with st.sidebar:
     else:
         st.warning('You are not Logging in')
         if st.button('Go to Login',type='primary',use_container_width=True):
-            st.switch_page('pages/Login.py')
+            st.switch_page('pages/02_Login.py')
             
 
 # Main Page Content
@@ -37,7 +37,7 @@ col1, col2, col3 = st.columns([1,2,1])
 with col2:
     if st.button('Go to Upload',type='primary',use_container_width=True):
         if st.session_state['logged_in']:
-            st.switch_page('pages/Upload.py')
+            st.switch_page('pages/03_Upload.py')
         else:
             st.info('Please Login First')
-            st.switch_page('pages/Login.py')
+            st.switch_page('pages/02_Login.py')
