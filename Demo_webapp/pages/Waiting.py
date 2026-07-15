@@ -7,6 +7,8 @@ if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 if "uploaded_files" not in st.session_state:
     st.session_state["uploaded_files"] = []
+if "raw_sequence" not in st.session_state:
+    st.session_state["raw_sequence"] = None
 if "processing_complete" not in st.session_state:
     st.session_state["processing_complete"] = False
 
@@ -17,7 +19,7 @@ if not st.session_state["logged_in"]:
     st.warning("⚠️ Please log in to view this page.")
     st.stop()
 
-if not st.session_state["uploaded_files"]:
+if not st.session_state["uploaded_files"] and not st.session_state["raw_sequence"]:
     st.warning("⚠️ No files detected for processing.")
     st.switch_page("pages/Upload.py")
 

@@ -2,52 +2,22 @@ import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
 import os
+import glob
 import streamlit as st
 import re
 
 st.set_page_config(page_title="Result Dashboard", layout="wide")
 
 # Security Check: Ensure user is logged in
-if "logged_in" not in st.session_state:
-    st.session_state["logged_in"] = False
 if not st.session_state.get("logged_in", False):
     st.warning("⚠️ You must be logged in to view results.")
     st.stop()
-
-if 'uploaded_files' not in st.session_state or not st.session_state['uploaded_files']:
+# Check Sequence Uploading
+if not st.session_state.get('uploaded_files') and not st.session_state.get('raw_sequence'):
     st.warning("⚠️ No data found. Please go back to the Upload page and submit your CSV files.")
     st.stop() # This halts the script so the app doesn't crash trying to process empty data
 
-uploaded_files = st.session_state.get('uploaded_files', [])
-
-#Password Part
-def check_password():
-    """Returns `True` if the user had a correct password."""
-    def password_entered():
-        """Checks whether a password entered by the user is correct."""
-        if st.session_state["password"] == st.secrets["password"]:
-            st.session_state["password_correct"] = True
-            del st.session_state["password"]
-        else:
-            st.session_state["password_correct"] = False
-
-    if "password_correct" not in st.session_state:
-        # First run, show input for password.
-        st.text_input("Please enter the correct password:", 
-                      type="password", on_change=password_entered, key="password")
-        return False
-    elif not st.session_state["password_correct"]:
-        st.text_input("Please enter the correct password:",
-                      type="password", on_change=password_entered, key="password")
-        st.error(f"Password incorrect",color="red")
-        return False
-    else:
-        return True
-
-
-
-#if not check_password():
-#st.stop()
+#uploaded_files = st.session_state.get('uploaded_files', [])
 
 # Helper Function
 def get_display_names(file):
@@ -154,7 +124,7 @@ def plot_pie(filtered_df,formatted_total):
     return fig_pie
 
 # Summary tab content
-def summary_dashboard(file_paths):
+def summary_dashboard(csv_path):
     """
     Iterates through a list of CSV files, opens EVERY file, 
     and generates Bar and Pie charts for sheets.
@@ -163,21 +133,21 @@ def summary_dashboard(file_paths):
     st.header("Summary Dashboard")
     col_select, _ = st.columns([1, 3])
     with col_select:
-        chart_type = st.selectbox("Global Chart Type", options=["Pie Chart", "Bar Chart"],key='summary_chart_type')
-    for i, file in enumerate(file_paths):         
+        chart_type = st.selectbox("Chart Type", options=["Pie Chart", "Bar Chart"],key='summary_chart_type')
+    for i, file in enumerate(csv_path):         
         # Create new row every 2 items
         if i % 2 == 0:
             cols = st.columns(2)
         col = cols[i % 2]
         
         # 1. Get Details from File
-        group_name = get_display_names(file)
+        file_name = os.path.basename(file)
+        group_name = get_display_names(file_name)
         group_detail = map_group_detail(group_name)
 
         # 2. Load and Process Data
         plot_df, total_peptides, formatted_total= load_prep_data(file)
         if plot_df is None:
-            st.warning(f"Skipping '{file.name}': Required columns 'nPepSeq' or 'Bioactivity' not found.")
             continue
         # 4. Render Dashboard Components
         with col:
@@ -194,7 +164,7 @@ def summary_dashboard(file_paths):
                 )
                 # Apply Filter
                 if select_bioac:
-                    filtered_df = plot_df[plot_df['Bioactivity'].isin(select_bioac)]
+                    filtered_df = plot_df[plot_df['Bioactivity'].isin(select_bioac)] if select_bioac else plot_df.copy()
                 else:
                     filtered_df = plot_df.copy()
                 total_rows = len(plot_df)
@@ -219,10 +189,10 @@ def summary_dashboard(file_paths):
                 else:
                     fig = plot_pie(filtered_df, formatted_total)
                     st.plotly_chart(fig, use_container_width=True)
-    create_sum_table(file_paths)
+    create_sum_table(csv_path)
 
 
-def create_sum_table(file_paths):
+def create_sum_table(csv_paths):
     """
     Creates a summary table for all uploaded Excel files, 
     showing the total peptide sequences for each sheet.
@@ -230,11 +200,10 @@ def create_sum_table(file_paths):
     st.markdown("## 📈 Statistical Summary")
     summary_data = []
 
-    for file in file_paths:
+    for file in csv_paths:
         #raw_name = file.name.replace('.csv', '')
-        display_sheet_name = get_display_names(file)  # Use the regex function to extract the sheet name
-        file.seek(0)
-
+        file_name = os.path.basename(file)
+        display_sheet_name = get_display_names(file_name)  # Use the regex function to extract the sheet name
         df = pd.read_csv(file)  # Read the CSV file into a DataFrame
 
         if 'nPepSeq' not in df.columns:
@@ -246,14 +215,14 @@ def create_sum_table(file_paths):
             "Sheet Name": display_sheet_name,
             "Total Peptide Sequences": total_peptides
         })
-    
-    summary_df = pd.DataFrame(summary_data)
-    st.dataframe(summary_df, width="stretch", hide_index=True,
+    if summary_data:
+        summary_df = pd.DataFrame(summary_data)
+        st.dataframe(summary_df, width="stretch", hide_index=True,
                  column_config={"Total Peptide Sequences": st.column_config.NumberColumn(
                      alignment="left")})
              
 
-def render_group_tab(group_name,file):
+def render_group_tab(group_name,csv_file):
     # For render each group detail
     group_detail = map_group_detail(group_name)
     st.header(f'Detail Analysis: {group_name} {group_detail}')
@@ -263,7 +232,7 @@ def render_group_tab(group_name,file):
         st.session_state[limit_key] = 10
     # Identify Correct File
     target_file = None
-    for f in file:
+    for f in csv_file:
         if get_display_names(f) == group_name:
             target_file = f
             break
@@ -296,9 +265,9 @@ def render_group_tab(group_name,file):
     df['is_prior'] = df['Bioactivity'].str.lower().isin(interesed_list)
     df = df.sort_values(by=['is_prior', 'nPepSeq'], ascending=[False, False])
     df = df.reset_index(drop=True)
+    
     total_rows = len(df)
     current_limit = st.session_state[limit_key]
-    
     df_to_display = df.head(current_limit)
 
     for index, row in df_to_display.iterrows():
@@ -306,12 +275,9 @@ def render_group_tab(group_name,file):
         count = row['nPepSeq']
         
         c1,c2,c3,c4,c5 = st.columns([0.5, 3, 1.5, 1.5, 1.5])
-        with c1:
-            st.markdown(f'{index+1}.',unsafe_allow_html=True)
-        with c2:
-            st.markdown(bioactivity,unsafe_allow_html=True)
-        with c3:
-            st.markdown(count,unsafe_allow_html=True)
+        with c1: st.markdown(f'{index+1}.',unsafe_allow_html=True)
+        with c2: st.markdown(bioactivity,unsafe_allow_html=True)
+        with c3: st.markdown(count,unsafe_allow_html=True)
         with c4:
             interesed_list =st.session_state.get('Interested_Bioactivity',[])
             lower_bioac = bioactivity.lower()
@@ -358,22 +324,30 @@ def get_sequence_path(group_name,bioactivity_name):
     file_path = os.path.join(BASE_DIR, target_folder, f"{bioactivity_name}.csv")
     return file_path
 
+def get_stat_file():
+    BASE_DIR = 'Result_Sequence'
+    if not os.path.exists(BASE_DIR):
+        return []
+    #find file inside the folder
+    return glob.glob(os.path.join(BASE_DIR, '**', 'RankBioactivity_*.csv'), recursive=True)
+
 
 # Tab Name Define
 st.title("Peptide Sequence Bioactivity Dashboard")
 tab_titles = ["Summary", "Group 1", "Group 2", "Group 3a", "Group 3b", "ML Prediction"]
 tabs = st.tabs(tab_titles)
 
+csv_files = get_stat_file()
 # Route to appropriate render function based on selected tab
 with tabs[0]:
-    summary_dashboard(uploaded_files)
+    summary_dashboard(csv_files)
 with tabs[1]:
-    render_group_tab("Group 1", uploaded_files)
+    render_group_tab("Group 1", csv_files)
 with tabs[2]:
-    render_group_tab("Group 2", uploaded_files)
+    render_group_tab("Group 2", csv_files)
 with tabs[3]:
-    render_group_tab("Group 3a", uploaded_files)
+    render_group_tab("Group 3a", csv_files)
 with tabs[4]:
-    render_group_tab("Group 3b", uploaded_files)
+    render_group_tab("Group 3b", csv_files)
 with tabs[5]:
     reder_ml_tab()
