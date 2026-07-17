@@ -37,9 +37,13 @@ st.markdown("""
     .st-key-topnav {
         background-color: #3f3f3f;
         border-radius: 8px;
-        padding: 10px 20px;
-        margin-bottom: 20px;
+        padding: 20px 20px;
+        margin: -1rem -1.5rem 24px -1.5rem;
+        width: calc(100% + 3rem);
+        alignment : center;
+        z-index: 999990;
         box-sizing: border-box;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
     }
  
     /* Remove default column gaps/padding inside the navbar */
@@ -56,13 +60,14 @@ st.markdown("""
     }
     .st-key-topnav .st-key-navspacer {
         flex: 1 1 auto !important;
+        width: auto !important;
     }
  
     /* Logo styling */
     .st-key-topnav .navbar-logo {
         color: #ffffff;
         font-weight: 700;
-        font-size: 1rem;
+        font-size: 1.05rem;
         background-color: #2e2e2e;
         padding: 8px 14px;
         border-radius: 6px;
@@ -77,12 +82,24 @@ st.markdown("""
         padding: 6px 16px;
         width: auto !important;
         whitespace: nowrap;
+        display: flex;
         text-align: center;
+        min-height: 2.5rem;
         transition: background-color 0.15s ease-in-out;
     }
     .st-key-topnav div[data-testid="stPageLink"]:hover {
         background-color: #808080;
     }
+    
+    .st-key-topnav div[data-testid="stPageLink"] a {
+        padding: 8px 18px;
+        display: flex;
+        align-items: center;
+    }
+    .st-key-topnav div[data-testid="stPageLink"] * {
+        background-color: transparent !important;
+    }
+            
     .st-key-topnav div[data-testid="stPageLink"] p {
         color: #ffffff !important;
         font-weight: 500;
@@ -92,14 +109,24 @@ st.markdown("""
     .st-key-topnav div[data-testid="stPageLink"] svg {
         display: none; /* hide the little page icon for a cleaner pill look */
     }
- 
+    .st-key-topnav .navbar-divider {
+        width: 1px;
+        height: 1.8rem;
+        background-color: #5a5a5a;
+        display: inline-block;
+    }
+            
     /* Logout button + username */
     .st-key-topnav .navbar-username {
         color: #ffffff;
         font-weight: 500;
-        /*text-align: right;*/
         white-space: nowrap;
+        display: flex;
+        align-items: center;
+        height: 2.5rem;
+        padding-right: 4px;  
     }
+            
     .st-key-topnav button[kind="secondary"] {
         background-color: #6b6b6b;
         color: #ffffff;
@@ -107,8 +134,11 @@ st.markdown("""
         border-radius: 6px;
         font-weight: 500;
         padding: 0.4rem 1rem;
-        width: auto;
+        width: auto !important;
+        whitespace: nowrap;
+        min-height: 2.5rem;
     }
+            
     .st-key-topnav button[kind="secondary"]:hover {
         background-color: #808080;
         color: #ffffff;
@@ -120,7 +150,7 @@ st.markdown("""
 with st.container(key="topnav"):
     if st.session_state['logged_in']:
         # logo | Home | Upload | Jobstatus | Dashboard | space | username | Logout
-        cols = st.columns(8)
+        cols = st.columns(9)
  
         with cols[0]:
             st.markdown('<div class="navbar-logo"> SmartBioPep</div>', unsafe_allow_html=True)
@@ -136,11 +166,13 @@ with st.container(key="topnav"):
         with cols[5]:
             st.container(key="navspacer")
         with cols[6]:
+            st.markdown('<div class="navbar-divider"></div>', unsafe_allow_html=True)
+        with cols[7]:
             st.markdown(
                 f'<div class="navbar-username">{st.session_state["username"]}</div>',
                 unsafe_allow_html=True,
             )
-        with cols[7]:
+        with cols[8]:
             if st.button("Logout", key="logout_btn"):
                 st.session_state['logged_in'] = False
                 st.session_state['username'] = None
@@ -148,7 +180,7 @@ with st.container(key="topnav"):
  
     else:
         # logo | Home | spacer | Login
-        cols = st.columns([4])
+        cols = st.columns(4)
  
         with cols[0]:
             st.markdown('<div class="navbar-logo">SmartBioPep</div>', unsafe_allow_html=True)
