@@ -24,6 +24,6 @@ with st.form("login_form"):
             st.session_state["logged_in"] = True
             st.session_state["username"] = username
             st.success("Login successful! Redirecting...")
-            st.switch_page("01_Home.py")
+            st.switch_page("pages/01_Home.py")
         else:
             st.error(" Incorrect username or password. Please try again.")

@@ -62,7 +62,8 @@ if st.session_state['upload_step'] == 1:
         uploaded_files = st.file_uploader("Upload Your Sequence Here", type=['fasta','txt','fa'], accept_multiple_files=False)
     st.markdown("<br>", unsafe_allow_html=True)
     with col_text:
-        raw_sequence = st.text_area("or Upload Your Sequence Here")
+        raw_sequence = st.text_area("or Upload Your Sequence Here",height=200)
+        sequence = raw_sequence.strip().replace('\n', '')
     
     if st.button('Review Submission',type='primary',use_container_width=True):
         if not project_name or not sample_name:
@@ -127,24 +128,3 @@ elif st.session_state['upload_step'] == 2:
             st.session_state['process_complete'] = False
             st.session_state['upload_step'] = 1
             st.switch_page('pages/04_Waiting.py')
-
-    
-    #json_payload = json.dump(submission_load)
-    #api_url = 'http://localhost:8501/api/saved_sample'
-    #headers = {'Content-Type': 'application/json'}
-
-    '''try:
-        response = requests.post(api_url, data=json_payload, headers=headers)
-        if response.status_code != 200:
-            st.toast("Warning: Could not save data to backend, but continuing analysis.")
-    except requests.exceptions.RequestException as e:
-        st.toast(f'backend connection Fail: {e}')
-    
-
-
-    if uploaded_files:
-        st.session_state['uploaded_files'] = uploaded_files
-        st.success("Files uploaded successfully! {len(uploaded_files)} files! Redirecting...")
-        st.switch_page('pages/Waiting.py')
-    else:
-        st.warning("Please upload at least one file.")'''
