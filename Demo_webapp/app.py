@@ -18,7 +18,7 @@ if st.session_state['logged_in']:
 else:
     nav_pages = [home_page,login_page]
 
-pg = st.navigation(nav_pages,position='hidden')
+pg = st.navigation(nav_pages,position='top')
 
 st.markdown("""
 <style>
@@ -33,7 +33,7 @@ st.markdown("""
         max-width: 100% !important;
     }
             
-    /* The navbar container itself */
+    /* The navbar container */
     .st-key-topnav {
         background-color: #3f3f3f;
         border-radius: 8px;
@@ -50,7 +50,7 @@ st.markdown("""
     .st-key-topnav div[data-testid="stHorizontalBlock"] {
         align-items: center;
         flex-wrap: nowrap; /*make the column fit with the content */
-        gap: 0.4rem;
+        gap: 0.rem;
     }
             
     .st-key-topnav div[data-testid="stColumn"] {
@@ -60,7 +60,7 @@ st.markdown("""
     }
     .st-key-topnav .st-key-navspacer {
         flex: 1 1 auto !important;
-        width: auto !important;
+        width: 2rem !important;
     }
  
     /* Logo styling */
@@ -79,12 +79,11 @@ st.markdown("""
     .st-key-topnav div[data-testid="stPageLink"] {
         background-color: #6b6b6b;
         border-radius: 6px;
-        padding: 6px 16px;
+        padding: 3px 12px;
         width: auto !important;
         whitespace: nowrap;
         display: flex;
         text-align: center;
-        min-height: 2.5rem;
         transition: background-color 0.15s ease-in-out;
     }
     .st-key-topnav div[data-testid="stPageLink"]:hover {
@@ -144,13 +143,13 @@ st.markdown("""
         color: #ffffff;
         border: none;
     }
-</style>    
+</style>
 """,unsafe_allow_html=True)
 
 with st.container(key="topnav"):
     if st.session_state['logged_in']:
         # logo | Home | Upload | Jobstatus | Dashboard | space | username | Logout
-        cols = st.columns(9)
+        cols = st.columns(8)
  
         with cols[0]:
             st.markdown('<div class="navbar-logo"> SmartBioPep</div>', unsafe_allow_html=True)
@@ -166,13 +165,11 @@ with st.container(key="topnav"):
         with cols[5]:
             st.container(key="navspacer")
         with cols[6]:
-            st.markdown('<div class="navbar-divider"></div>', unsafe_allow_html=True)
-        with cols[7]:
             st.markdown(
                 f'<div class="navbar-username">{st.session_state["username"]}</div>',
                 unsafe_allow_html=True,
             )
-        with cols[8]:
+        with cols[7]:
             if st.button("Logout", key="logout_btn"):
                 st.session_state['logged_in'] = False
                 st.session_state['username'] = None
