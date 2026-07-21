@@ -191,7 +191,7 @@ elif st.session_state['waiting_step'] == 2:
 
     if not st.session_state['processing_complete']:
         status_placeholder.markdown(status_badge('● Running','running'),unsafe_allow_html=True)
-        results_placeholder.button('View your result',disabled=True,width=100)
+        #results_placeholder.button('View your result',disabled=True,width=100)
         
         elapsed_total = 0.0
         for step_index,step in enumerate(pipeline_step):

@@ -20,6 +20,14 @@ if not st.session_state.get('uploaded_files') and not st.session_state.get('raw_
 #uploaded_files = st.session_state.get('uploaded_files', [])
 
 # Helper Function
+# Function to transform the bioactivity name
+def format_bioac_name(name):
+    if pd.isna(name):
+        return name
+    parts = str(name).replace('_', ' ').split(' ')
+    formatted_parts = [p[0].upper() +p[1:] if len(p) >0 else p for p in parts]
+    return ' '.join(formatted_parts)
+
 def get_display_names(file_name):
     #Extracts the sheet name using regex.
     raw_name = file_name.replace('.csv', '')  # Remove the .csv extension (if using the file fromapi or upload usinf.name instead)
@@ -48,6 +56,8 @@ def load_prep_data(file):
     df = pd.read_csv(file)
     if 'nPepSeq' not in df.columns or 'Bioactivity' not in df.columns:
         return None,0,"0"
+    df['Raw_bioactiity'] = df['Bioactivity']
+    df['Bioactivity'] =df['Bioactivity'].apply(format_bioac_name)
     
     total_peptides = df['nPepSeq'].sum()
     plot_df = df.sort_values(by='nPepSeq', ascending=False).copy() 

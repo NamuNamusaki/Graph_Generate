@@ -10,6 +10,14 @@ if not st.session_state.get('logged_in',False):
     st.warning('Please log in to view this page.')
     st.stop()
 
+# Helper function
+def format_bioac_name(name):
+    if pd.isna(name):
+        return name
+    parts = str(name).replace('_', ' ').split(' ')
+    formatted_parts = [p[0].upper() +p[1:] if len(p) >0 else p for p in parts]
+    return ' '.join(formatted_parts)
+
 st.title("Data Upload Page")
 
 # Upload File check =============================================================================
@@ -35,9 +43,20 @@ if st.session_state['upload_step'] == 1:
     #Bioactivity Selection
     try:
         bioac_df = pd.read_csv('bioactivity.csv')
+        bioac_df['raw_bioactivity'] = bioac_df['Bioactivity']
+        bioac_df['Bioactivity'] = bioac_df['Bioactivity'].apply(format_bioac_name)
         all_bioactivities = bioac_df['Bioactivity'].tolist()
     except FileNotFoundError:
         all_bioactivities = ["ACE Inhibitory", "Antioxidant", "Antimicrobial", "Anti-inflammatory"]
+    saved_bioac = st.session_state.get('bioac_search', [])
+    safe_defaults = []
+    for item in saved_bioac:
+        formatted_item = format_bioac_name(item)
+        if formatted_item in all_bioactivities:
+            safe_defaults.append(formatted_item)
+        elif item in all_bioactivities:
+            safe_defaults.append(item)
+
     bioac_search = st.multiselect(
                     "Select Bioactivities (Max 3):*",
                     options=all_bioactivities,
