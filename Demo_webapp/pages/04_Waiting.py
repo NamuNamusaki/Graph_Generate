@@ -77,7 +77,7 @@ def render_job_status_table(current_step_index:int) -> str:
     <div style="border:1px solid #e5e7eb; border-radius:10px; overflow:hidden;">
         <table style="width:100%; border-collapse:collapse; font-size:0.95rem;">
             <thead>
-                <tr style="background:#f1f3f5; text-align:left;">
+                <tr style="background:#f1f3f5; text-align:left; color:#6c757d;">
                     <th style="padding:10px 14px;">Pipeline Step</th>
                     <th style="padding:10px 14px;">Status</th>
                     <th style="padding:10px 14px;">Running time</th>
