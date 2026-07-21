@@ -1,6 +1,6 @@
 import streamlit as st
 
-st.set_page_config(page_title="SmartBioPep", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="SmartBioPep", layout="centered", initial_sidebar_state="collapsed")
 
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
@@ -27,10 +27,11 @@ st.markdown("""
     header[data-testid="stHeader"] [role="tablist"] { display: none !important; }
     /* --- Reset the default page padding so our navbar can bleed full width --- */
     .block-container {
-        padding-top: 1rem !important;
+        padding-top: 0rem !important;
         padding-left: 1.5rem !important;
-        padding-right: 1.5rem !important;
-        max-width: 100% !important;
+        padding-right: 0rem !important;
+        width: 80% !important;
+        max-width: 80% !important
     }
             
     /* The navbar container */
@@ -38,9 +39,8 @@ st.markdown("""
         background-color: #3f3f3f;
         border-radius: 8px;
         padding: 20px 20px;
-        margin: -1rem -1.5rem 24px -1.5rem;
+        margin: 0rem -1.5rem 10px -1.5rem;
         width: calc(100% + 3rem);
-        alignment : center;
         z-index: 999990;
         box-sizing: border-box;
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
@@ -50,7 +50,7 @@ st.markdown("""
     .st-key-topnav div[data-testid="stHorizontalBlock"] {
         align-items: center;
         flex-wrap: nowrap; /*make the column fit with the content */
-        gap: 0.rem;
+        gap: 0.4rem;
     }
             
     .st-key-topnav div[data-testid="stColumn"] {
@@ -60,7 +60,7 @@ st.markdown("""
     }
     .st-key-topnav .st-key-navspacer {
         flex: 1 1 auto !important;
-        width: 2rem !important;
+        width: auto !important;
     }
  
     /* Logo styling */
@@ -69,21 +69,28 @@ st.markdown("""
         font-weight: 700;
         font-size: 1.05rem;
         background-color: #2e2e2e;
-        padding: 8px 14px;
+        padding: 0 16px;
         border-radius: 6px;
         white-space: nowrap;
-        display: inline-block;
+        height: var(--pill-height);
+        display: flex;
+        align-items: center;
+        justify-content: center
     }
  
     /* Nav links (st.page_link) */
     .st-key-topnav div[data-testid="stPageLink"] {
         background-color: #6b6b6b;
         border-radius: 6px;
-        padding: 3px 12px;
+        padding: 0;
         width: auto !important;
         whitespace: nowrap;
+        height: var(--pill-height);)
         display: flex;
+        align-items: center;
+        justify-content: center;
         text-align: center;
+        box-sizing: border-box;
         transition: background-color 0.15s ease-in-out;
     }
     .st-key-topnav div[data-testid="stPageLink"]:hover {
@@ -91,9 +98,10 @@ st.markdown("""
     }
     
     .st-key-topnav div[data-testid="stPageLink"] a {
-        padding: 8px 18px;
+        padding: 0px 18px;
         display: flex;
         align-items: center;
+        box-sizing:border-box;
     }
     .st-key-topnav div[data-testid="stPageLink"] * {
         background-color: transparent !important;
@@ -122,7 +130,7 @@ st.markdown("""
         white-space: nowrap;
         display: flex;
         align-items: center;
-        height: 2.5rem;
+        height: ver(--pill-h);
         padding-right: 4px;  
     }
             
@@ -132,10 +140,11 @@ st.markdown("""
         border: none;
         border-radius: 6px;
         font-weight: 500;
-        padding: 0.4rem 1rem;
+        padding: 0 1rem;
         width: auto !important;
         whitespace: nowrap;
-        min-height: 2.5rem;
+        height: var(--pill-h);
+        box-sizing: border-box;
     }
             
     .st-key-topnav button[kind="secondary"]:hover {

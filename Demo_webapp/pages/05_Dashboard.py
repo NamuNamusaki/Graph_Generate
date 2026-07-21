@@ -6,7 +6,7 @@ import glob
 import streamlit as st
 import re
 
-st.set_page_config(page_title="Result Dashboard", layout="wide")
+st.set_page_config(page_title="Result Dashboard", layout="centered")
 
 # Security Check: Ensure user is logged in
 if not st.session_state.get("logged_in", False):

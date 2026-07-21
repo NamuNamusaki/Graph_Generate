@@ -1,10 +1,10 @@
 import streamlit as st
 import time
+import re
 
-st.set_page_config(page_title="Waiting", layout="centered")
+st.set_page_config(page_title="Job Status", layout="centered")
 
-
-
+# 1. Session Login Checking
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 if "uploaded_files" not in st.session_state:
@@ -13,10 +13,13 @@ if "raw_sequence" not in st.session_state:
     st.session_state["raw_sequence"] = None
 if "processing_complete" not in st.session_state:
     st.session_state["processing_complete"] = False
+# For page changing in jobstatus
+if "waiting_step" not in st.session_state: 
+    st.session_state["waiting_step"] = 1
+if "noti_email" not in st.session_state:
+    st.session_state["noti_email"] = ""
 
-# ==========================================
 # 2. SECURITY CHECKS
-# ==========================================
 if not st.session_state["logged_in"]:
     st.warning("⚠️ Please log in to view this page.")
     st.stop()
@@ -25,26 +28,199 @@ if not st.session_state["uploaded_files"] and not st.session_state["raw_sequence
     st.warning("⚠️ No files detected for processing.")
     st.switch_page("pages/03_Upload.py")
 
-st.title('Processing Data')
-st.markdown('Data Submitted Successffully')
+# Helper ============================
+Email_patern = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
-if 'processing_complete' not in st.session_state:
-    st.session_state['processing_complete'] = False
+def validate_email(value:str) -> bool:
+    return bool(value) and bool(Email_patern.match(value.strip()))
 
-if not st.session_state['processing_complete']:
-    progress_bar = st.progress(0)
-    status_text = st.empty()
+# To format the time from second to minute
+def format_hms(second:int) -> str:
+    second = int(second)
+    hours, remainder = divmod(second, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    return f'{hours}:{minutes:02d}:{seconds:02d}'
+
+# Job status
+def status_badge(label: str,kind:str) ->str:
+    colors ={
+        'done': ("#81B18C", "#ffffff"),
+        'running': ("#6b95ea", "#ffffff"),
+        'pending' : ("#e9ecef", "#6c757d"),
+    }
+    bg,fg = colors[kind]
+    return (
+        f'<span style="background:{bg}; color:{fg}; padding: 4px 12px;'
+        f'border-radius:14px; font-size:0.85rem; font-weight:600; '
+        f'display:inline-block;">{label}</span>'
+    )
+
+def render_job_status_table(current_step_index:int) -> str:
+    rows_html = ""
+    for i,step in enumerate(pipeline_step):
+        elapsed = st.session_state['step_elapsed'][i]
+        if i < current_step_index:
+            status_html =status_badge('Done','done')
+            time_text = format_hms(elapsed)
+        elif i == current_step_index:
+            status_html = status_badge('Running','running')
+            time_text = format_hms(elapsed)
+        else:
+            status_html = status_badge('Pending','pending')
+            time_text = '-'
+        rows_html += f'''
+        <tr style="border-top:1px solid #e5e7eb;">
+            <td style="padding:10px 14px;">{i + 1} · {step['name']}</td>
+            <td>{status_html}</td>
+            <td>{time_text}</td></tr>'''
+    return f"""
+    <div style="border:1px solid #e5e7eb; border-radius:10px; overflow:hidden;">
+        <table style="width:100%; border-collapse:collapse; font-size:0.95rem;">
+            <thead>
+                <tr style="background:#f1f3f5; text-align:left;">
+                    <th style="padding:10px 14px;">Pipeline Step</th>
+                    <th style="padding:10px 14px;">Status</th>
+                    <th style="padding:10px 14px;">Running time</th>
+                </tr>
+            </thead>
+            <tbody>{rows_html}</tbody>
+        </table>
+    </div>
+    """
+# PIPELINE DEFINITION
+# --- SIMULATION ONLY -------------------------------------------------------
+# Once your FastAPI backend + Celery worker are wired up, delete PIPELINE_STEPS
+# and the loop in Step 2 below, and instead poll a real endpoint, e.g.:
+#     GET /jobs/{job_id}/status  ->  {"current_step": ..., "steps": [...]}
+# ---------------------------------------------------------------------------
+pipeline_step = [
+    {'name': 'Reading FASTA/Sequence','seconds':2},
+    {'name': 'In silico Digstion','seconds':3},
+    {'name': 'Peptide Generation','seconds':4},
+    {'name': 'Bioactivity Matching','seconds':5},
+    {'name': 'Result Preparation','seconds':2}
+]
+total_sec = sum(step['seconds'] for step in pipeline_step)
+tick = 0.1 # how often the UI refreshes -- smaller = smoother progress bar
+
+if 'step_elapsed' not in st.session_state:
+    st.session_state['step_elapsed'] = [0.0 for _ in pipeline_step]
+
+# Create a routing for waiting page
+# the first page is for confirm data uploaded succession the second page is the job status
+if st.session_state['waiting_step'] == 1:
+    # upload success -> confirm text +email input
+    with st.container(border=True):
+        st.markdown(
+            '''
+            <div style="text-align:center; padding: 8px 0 20px 0;">
+                <div style="
+                    width:70px; height:70px; border-radius:50%;
+                    background:#6c757d; color:white;
+                    display:flex; align-items:center; justify-content:center;
+                    font-size:2rem; margin:0 auto 16px auto;">
+                    ✓
+                </div>
+                <h2 style="margin-bottom:8px;">Analysis Submitted Successfully</h2>
+                <p style="color:#6c757d; max-width:480px; margin:0 auto;">
+                    Your request has been received and the analysis pipeline has started.
+                    A notification will be sent to your email address.
+                </p>
+            </div>
+            ''',
+            unsafe_allow_html=True,
+        )
     
-    for i in range(100):
-        time.sleep(0.05)
-        progress_bar.progress(i + 1)
-        status_text.text(f"Analyzing {i + 1}% Complete")
+    with st.container(border=True):
+        col1,col2 = st.columns([1,6])
+        with col1:
+            st.markdown(
+                '<div style="width:48px; height:48px; background:#ced4da; '
+                'border-radius:8px; display:flex; align-items:center; '
+                'justify-content:center; font-size:1.4rem;">✉️</div>'
+                ,unsafe_allow_html=True
+            )
+        with col2:
+            st.caption('Notification Email')
+            email =st.text_input(
+                'Notification Email',
+                value  = st.session_state['noti_email'],
+                placeholder='research@university.ac.th',
+                label_visibility='collapsed'
+            )
 
-    st.session_state['processing_complete'] = True
-    status_text.empty()
-    progress_bar.empty()
+    st.markdown(
+            """
+            <p style="color:#6c757d; text-align:center; font-size:0.9rem; margin-top:16px;">
+                The email will include a link to track your job status in real time.<br>
+                You will receive another notification once your results are ready.
+            </p>
+            """,
+            unsafe_allow_html=True,
+        )
 
-if st.session_state['processing_complete']:
-    st.success('Analysis Complete Your Data is Ready')
-    if st.button('View your result',type='primary',use_container_width=True):
-        st.switch_page('pages/05_Dashboard.py')
+    process_col,home_col = st.columns(2)
+    with process_col:
+        process_clicked = st.button('Track Your Job Status',type='primary',use_container_width=True)
+    with home_col:
+        back_home_clicked = st.button('Back to Home',type='primary',use_container_width=True)
+    if process_clicked:
+        if not validate_email(email):
+            st.error("⚠️ Please enter a valid email address before continuing.")
+        else:
+            st.session_state['noti_email'] = email.strip()
+            st.session_state['waiting_step'] = 2
+            st.rerun()
+        if back_home_clicked:
+            st.switch_page('pages/01_Home.py')
+
+# Second state == Job Progress tracker        
+elif st.session_state['waiting_step'] == 2:
+    st.title('Job Status')
+
+    header_left, header_right = st.columns([3,2])
+    status_placeholder = header_left.empty()
+    results_placeholder = header_right.empty()
+
+    st.markdown('### Overall Progress')
+    progress_pct_placeholder = st.empty()
+    progress_bar_placeholder = st.empty()
+
+    st.markdown("#### Pipeline Steps")
+    table_placeholder = st.empty()
+
+    if not st.session_state['processing_complete']:
+        status_placeholder.markdown(status_badge('● Running','running'),unsafe_allow_html=True)
+        results_placeholder.button('View your result',disabled=True,width=100)
+        
+        elapsed_total = 0.0
+        for step_index,step in enumerate(pipeline_step):
+            step_elapsed =0.0
+            while step_elapsed < step['seconds']:
+                time.sleep(tick)
+                step_elapsed += tick
+                elapsed_total += tick
+                st.session_state['step_elapsed'][step_index] = step_elapsed
+
+                pct = min(100,int(elapsed_total/total_sec*100))
+                remaiming = max(0,total_sec-elapsed_total)
+
+                progress_pct_placeholder.markdown(f"### {pct}%")
+                progress_bar_placeholder.progress(pct)
+                table_placeholder.markdown(
+                    render_job_status_table(step_index), unsafe_allow_html=True
+                )
+            st.session_state['step_elapsed'][step_index] = step['seconds']
+        st.session_state['processing_complete'] = True
+    
+    if st.session_state['processing_complete']:
+        status_placeholder.markdown(status_badge('● Done','done'),unsafe_allow_html=True)
+        results_placeholder.empty()
+        progress_pct_placeholder.markdown("### 100%")
+        progress_bar_placeholder.progress(100)
+        table_placeholder.markdown(
+            render_job_status_table(len(pipeline_step)), unsafe_allow_html=True
+        )
+        st.success('Analysis Complete Your Data is Ready')
+        if st.button('View your result',type='primary',use_container_width=True):
+            st.switch_page('pages/05_Dashboard.py')

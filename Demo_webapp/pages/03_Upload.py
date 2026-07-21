@@ -3,21 +3,20 @@ import pandas as pd
 import json
 import requests
 
-st.set_page_config(page_title="Upload Sample", layout="wide")
-st.markdown('Please upload your sequence')
+st.set_page_config(page_title="Upload Sample", layout="centered")
 
-# Security Check
+# Security Check =================================================================================
 if not st.session_state.get('logged_in',False):
     st.warning('Please log in to view this page.')
     st.stop()
 
 st.title("Data Upload Page")
 
-# Upload File check
+# Upload File check =============================================================================
 if 'upload_step' not in st.session_state:
     st.session_state['upload_step'] = 1
 
-# Sample Information
+# Sample Information =============================================================================
 if st.session_state['upload_step'] == 1:
     st.markdown("Please complete your sample details and upload your FASTA sequence below.")
 
@@ -91,9 +90,9 @@ if st.session_state['upload_step'] == 1:
             
             st.session_state['upload_step'] = 2
             st.rerun()
-
+# Review Sample Information =======================================================================================
 elif st.session_state['upload_step'] == 2:
-    st.title('Review and Sub')
+    st.title('Review and Confirm Submission')
     st.markdown('Please recheck your input before submitting for analysis.')
 
     with st.container(border=True):
