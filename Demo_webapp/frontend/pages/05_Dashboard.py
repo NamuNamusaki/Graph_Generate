@@ -87,9 +87,11 @@ def plot_bar(filter_df,formatted_total,top_n_option):
                         height=450)
 
     fig_bar.update_traces(textposition='inside',
+                          textfont=dict(weight='bold'),
                           hovertemplate='<b>%{y}</b><br>Count: %{x}<br>Percentage: %{customdata[0]}%{customdata[1]}<extra></extra>')
     fig_bar.update_layout(yaxis=dict(autorange="reversed", title='Bioactivities'),
                           xaxis=dict(title='Count of Peptide Sequences (Log Scale)'),
+                          font=dict(weight='bold'),
                           margin = dict(l=0, r=0, t=30, b=10),
                           coloraxis_showscale=False)
     return fig_bar
@@ -120,9 +122,11 @@ def plot_pie(filtered_df,formatted_total):
                         height=450)
     fig_pie.update_traces(textposition='inside', 
                         textinfo='percent+label',
+                        textfont=dict(weight='bold'),
                         direction = 'clockwise',
                         hovertemplate='<b>%{label}</b><br>Count: %{value}<br>%{customdata[0]}<extra></extra>')
     fig_pie.update_layout(margin = dict(l=0, r=0, t=30, b=10),
+                        font=dict(weight='bold'),
                         uniformtext_minsize=12, 
                         uniformtext_mode='hide',
                         legend=dict(
@@ -232,7 +236,10 @@ def create_sum_table(csv_paths):
             continue
         
         total_peptides = df['nPepSeq'].sum()
-        summary_data[f"{display_sheet_name} {group_detail}"] = f"{total_peptides:,}"
+        group_bioac = df['Bioactivity'].nunique()
+        summary_data[f"{display_sheet_name} {group_detail} - Total Peptides"] = f"{total_peptides:,}"
+        summary_data[f"{display_sheet_name} - Unique Bioactivities"] = f"{group_bioac:,}"
+
     details_df = pd.DataFrame(list(summary_data.items()), columns=["Parameter", "Detail"])
     st.table(details_df)
     st.markdown("<hr style='margin-bottom: 20px; margin-top: 10px;'>", unsafe_allow_html=True)
