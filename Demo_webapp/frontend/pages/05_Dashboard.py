@@ -80,7 +80,7 @@ def plot_bar(filter_df,formatted_total,top_n_option):
                         log_x=True,      # The Y-axis now scales by
                         text='nPepSeq',
                         color='nPepSeq',
-                        color_continuous_scale='Blues',
+                        color_continuous_scale='tempo',
                         custom_data=['Hover_Percentage', 'Hover_Details'],
                         orientation='h',
                         title=f'Total Peptide Sequences: {formatted_total}',
@@ -96,9 +96,10 @@ def plot_bar(filter_df,formatted_total,top_n_option):
 
 
 def plot_pie(filtered_df,formatted_total):
+    pie_rest = pd.DataFrame()
     if len(filtered_df) > 10:
         pie_top = filtered_df.head(9).copy()
-        pie_rest = filtered_df.iloc[9:]
+        pie_rest = filtered_df.iloc[9:]  #Keep all other item
         other_sum = pie_rest['nPepSeq'].sum()
         other_row = pd.DataFrame({
             'Bioactivity': ['Other'], 
@@ -113,9 +114,9 @@ def plot_pie(filtered_df,formatted_total):
                         values='nPepSeq', 
                         names='Bioactivity', 
                         hover_name='Bioactivity',
-                        #hole=0.4,  # Creates a donut
                         custom_data=['Hover_Combined'],
                         title=f'Top 10 Bioactivity Groups | Total Peptide Sequences: {formatted_total}',
+                        color_discrete_sequence=px.colors.qualitative.Pastel2,
                         height=450)
     fig_pie.update_traces(textposition='inside', 
                         textinfo='percent+label',
@@ -131,7 +132,7 @@ def plot_pie(filtered_df,formatted_total):
                             xanchor="center",
                             x=0.5
                         ))
-    return fig_pie
+    return fig_pie,pie_rest
 
 # Summary tab content
 def summary_dashboard(csv_path):
@@ -197,8 +198,14 @@ def summary_dashboard(csv_path):
                     st.plotly_chart(fig, use_container_width=True)
 
                 else:
-                    fig = plot_pie(filtered_df, formatted_total)
+                    fig,pie_rest = plot_pie(filtered_df, formatted_total)
                     st.plotly_chart(fig, use_container_width=True)
+                    if not pie_rest.empty:
+                        with st.expander(f'View All of Other ({len(pie_rest)} Bioactivities)'):
+                            display_df = pie_rest[['Bioactivity', 'nPepSeq', 'Hover_Percentage']].rename(
+                                columns={'nPepSeq': 'Count', 'Hover_Percentage': 'Percentage'}
+                            )
+                            st.dataframe(display_df, hide_index=True,use_container_width=True)
     create_sum_table(csv_path)
 
 def create_sum_table(csv_paths):

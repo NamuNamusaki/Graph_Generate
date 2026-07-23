@@ -44,11 +44,12 @@ def format_hms(second:int) -> str:
 # Job status
 def status_badge(label: str,kind:str) ->str:
     colors ={
-        'done': ("#81B18C", "#ffffff"),
+        'completed': ("#8DB080", "#ffffff"),
         'running': ("#6b95ea", "#ffffff"),
         'pending' : ("#e9ecef", "#6c757d"),
     }
-    bg,fg = colors[kind]
+    kind_key = kind.lower().strip()
+    bg,fg = colors.get(kind_key, colors['pending'])
     return (
         f'<span style="background:{bg}; color:{fg}; padding: 4px 12px;'
         f'border-radius:14px; font-size:0.85rem; font-weight:600; '
@@ -60,7 +61,7 @@ def render_job_status_table(current_step_index:int) -> str:
     for i,step in enumerate(pipeline_step):
         elapsed = st.session_state['step_elapsed'][i]
         if i < current_step_index:
-            status_html =status_badge('Done','done')
+            status_html =status_badge('Completed','completed')
             time_text = format_hms(elapsed)
         elif i == current_step_index:
             status_html = status_badge('Running','running')
@@ -214,7 +215,7 @@ elif st.session_state['waiting_step'] == 2:
         st.session_state['processing_complete'] = True
     
     if st.session_state['processing_complete']:
-        status_placeholder.markdown(status_badge('● Done','done'),unsafe_allow_html=True)
+        status_placeholder.markdown(status_badge('● Completed','completed'),unsafe_allow_html=True)
         results_placeholder.empty()
         progress_pct_placeholder.markdown("### 100%")
         progress_bar_placeholder.progress(100)

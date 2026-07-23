@@ -18,7 +18,8 @@ def format_bioac_name(name):
     formatted_parts = [p[0].upper() +p[1:] if len(p) >0 else p for p in parts]
     return ' '.join(formatted_parts)
 
-st.title("Data Upload Page")
+st.title("Uploading Page")
+st.divider()
 
 # Upload File check =============================================================================
 if 'upload_step' not in st.session_state:
@@ -32,13 +33,10 @@ if st.session_state['upload_step'] == 1:
     col1,col2 = st.columns(2)
     with col1:
         project_name = st.text_input("Project Name*",value=st.session_state.get('project_name',''))
-        organism = st.text_input("Your Organism",value=st.session_state.get('organism',''))
-        researcher_name = st.text_input("Researcher Name",value=st.session_state.get('researcher_name',''))
+        organism = st.text_input("Organism",value=st.session_state.get('organism',''))
     with col2:
         sample_name = st.text_input("Sample Name*",value=st.session_state.get('sample_name',''))
-        institute = st.text_input("Institute/lab Name",value=st.session_state.get('institute',''))
-    st.divider()
-    description = st.text_area("Description / Objective / Remark",value=st.session_state.get('description',''))
+        description = st.text_area("Description",value=st.session_state.get('description',''))
     st.divider()
     #Bioactivity Selection
     try:
@@ -94,8 +92,6 @@ if st.session_state['upload_step'] == 1:
             st.session_state['project_name'] = project_name
             st.session_state['sample_name'] = sample_name
             st.session_state['organism'] = organism
-            st.session_state['research_name'] = researcher_name
-            st.session_state['institute'] = institute
             st.session_state['description'] = description
             st.session_state['bioac_search'] = bioac_search
             st.session_state['ml_pred'] = ml_pred
@@ -115,13 +111,10 @@ elif st.session_state['upload_step'] == 2:
     st.markdown('Please recheck your input before submitting for analysis.')
 
     with st.container(border=True):
-        st.header('Sample Information')
         summary_data ={
             'Project Name': st.session_state.get('project_name','-'),
             'Sample Name': st.session_state.get('sample_name','-'),
             'Organism': st.session_state.get('organism','-'),
-            'Researcher Name': st.session_state.get('research_name','-'),
-            'Institute': st.session_state.get('institute','-'),
             'Bioactivities': ', '.join(st.session_state.get('bioac_search',[])) if st.session_state.get('bioac_search') else 'None',
             'ML Prediction': ', '.join(st.session_state.get('ml_pred',[])) if st.session_state.get('ml_pred') else 'None',
             'Cleavage Enzyme': st.session_state.get('clevage_enz','-'),

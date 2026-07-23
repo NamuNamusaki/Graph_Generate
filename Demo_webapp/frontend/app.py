@@ -36,7 +36,7 @@ st.markdown("""
             
     /* The navbar container */
     .st-key-topnav {
-        background-color: #3f3f3f;
+        background-color: #142F14;
         border-radius: 8px;
         padding: 20px 20px;
         margin: 0rem -1.5rem 10px -1.5rem;
@@ -65,7 +65,7 @@ st.markdown("""
  
     /* Logo styling */
     .st-key-topnav .navbar-logo {
-        color: #ffffff;
+        color: #FFFDFA;
         font-weight: 700;
         font-size: 1.05rem;
         background-color: #2e2e2e;
