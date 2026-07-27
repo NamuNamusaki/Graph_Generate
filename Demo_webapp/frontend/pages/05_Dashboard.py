@@ -6,6 +6,7 @@ import glob
 import streamlit as st
 import re
 import io
+import requests
 from datetime import datetime
 import matplotlib
 matplotlib.use("Agg")
@@ -19,16 +20,63 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image as RL
 
 st.set_page_config(page_title="Result Dashboard", layout="centered")
 
-# Security Check: Ensure user is logged in
+# Global CSS to make all Streamlit UI text bold
+st.markdown("""
+    <style>
+        .main p, .main h1, .main h2, .main h3, .main label, 
+        div[data-testid="stTable"], div[data-testid="stMetricValue"] {
+            font-weight: bold !important;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
+# Security Check + Data Check
 if not st.session_state.get("logged_in", False):
     st.warning("⚠️ You must be logged in to view results.")
     st.stop()
-# Check Sequence Uploading
-if not st.session_state.get('uploaded_files') and not st.session_state.get('raw_sequence'):
-    st.warning("⚠️ No data found. Please go back to the Upload page and submit your CSV files.")
-    st.stop() # This halts the script so the app doesn't crash trying to process empty data
+if 'job_id' not in st.session_state:
+    st.warning("⚠️ No data found. Please go back to the Upload page and submit a sequence.")
+    st.stop()
 
-#uploaded_files = st.session_state.get('uploaded_files', [])
+job_uuid = st.session_state['job_id']
+API_BASE_URL = "http://127.0.0.1:8000/api" # NEED CHANGE!
+
+#API FETCHING FUNCTIONS
+@st.cache_data(show_spinner="Fetching data from server...")
+def fetch_summary_data(job_id):
+    try:
+        response = requests.get(f"{API_BASE_URL}/results/{job_id}/summary")
+        response.raise_for_status()
+        json_data = response.json()
+        
+        # Convert JSON arrays back into Pandas DataFrames for the frontend
+        group_dfs = {}
+        for group_name, data_list in json_data.items():
+            if data_list:
+                group_dfs[group_name] = pd.DataFrame(data_list)
+        return group_dfs
+    
+    except requests.exceptions.RequestException as e:
+        st.error(f"⚠️ Could not fetch summary data from the server. Details: {e}")
+        return {}
+    
+def fetch_sequence_csv(job_id, group_name, bioactivity):
+    """
+    Coworker Handoff Note:
+    Endpoint: GET /api/results/{job_id}/download?group={group_name}&bioactivity={bioactivity}
+    Expected Response: Plain text CSV string.
+    """
+    try:
+        # Safe URL formatting
+        url = f"{API_BASE_URL}/results/{job_id}/download"
+        params = {"group": group_name, "bioactivity": bioactivity}
+        response = requests.get(url, params=params)
+        
+        if response.status_code == 200:
+            return response.content # Returns raw bytes perfect for the download button
+        return None
+    except:
+        return None
 
 # Helper Function
 # Function to transform the bioactivity name
@@ -59,25 +107,23 @@ def map_group_detail(file):
         "Group 3a": "Longer Match (Single Functional Domain)",
         "Group 3b": "Longer Match (Multiple Functional Domains)"
     }
-    return detail_mapping.get(file, "")
+    return detail_mapping.get(group_name, "")
 
-@st.cache_data(show_spinner=False) # Cache for speed
 def load_prep_data(file):
-    #file.seek(0)
-    df = pd.read_csv(file,encoding='utf-8')
-    if 'nPepSeq' not in df.columns or 'Bioactivity' not in df.columns:
-        return None,0,"0"
+    if df is None or df.empty or 'nPepSeq' not in df.columns or 'Bioactivity' not in df.columns:
+            return None, 0, "0"
+    df = df.copy()
     df['Raw_bioactiity'] = df['Bioactivity']
-    df['Bioactivity'] =df['Bioactivity'].apply(format_bioac_name)
+    df['Bioactivity'] = df['Bioactivity'].apply(format_bioac_name)
     
     total_peptides = df['nPepSeq'].sum()
-    plot_df = df.sort_values(by='nPepSeq', ascending=False).copy() 
+    plot_df = df.sort_values(by='nPepSeq', ascending=False)
     plot_df['Hover_Percentage'] = ((plot_df['nPepSeq'] / total_peptides) * 100).round(2).astype(str) + '%'
     plot_df['Hover_Details'] = ""
     plot_df['Hover_Combined'] = plot_df['Hover_Percentage'] + plot_df['Hover_Details']
     formatted_total = f"{total_peptides:,}"
     
-    return plot_df, total_peptides, formatted_total   
+    return plot_df, total_peptides, formatted_total 
 
 def plot_bar(filter_df,formatted_total,top_n_option):
     if "All" in top_n_option:
@@ -150,7 +196,7 @@ def plot_pie(filtered_df,formatted_total):
     return fig_pie,pie_rest
 
 # Summary tab content
-def summary_dashboard(csv_path):
+def summary_dashboard(group_dfs):
     """
     Iterates through a list of CSV files, opens EVERY file, 
     and generates Bar and Pie charts for sheets.
@@ -163,7 +209,7 @@ def summary_dashboard(csv_path):
     with col_html:
         st.download_button(
             "📄 Download HTML Report",
-            data=generate_html_report(csv_path),
+            data=generate_html_report(group_dfs),
             file_name="bioactivity_dashboard_report.html",
             mime="text/html",
             use_container_width=True,
@@ -171,12 +217,12 @@ def summary_dashboard(csv_path):
     with col_pdf:
         st.download_button(
             "📑 Download PDF Report",
-            data=generate_pdf_report(csv_path),
+            data=generate_pdf_report(group_dfs),
             file_name="bioactivity_dashboard_report.pdf",
             mime="application/pdf",
             use_container_width=True,
         )
-    for i, file in enumerate(csv_path):         
+    for i, file in enumerate(group_dfs):         
         # Create new row every 2 items
         if i % 2 == 0:
             cols = st.columns(2)
@@ -237,43 +283,39 @@ def summary_dashboard(csv_path):
                                 columns={'nPepSeq': 'Count', 'Hover_Percentage': 'Percentage'}
                             )
                             st.dataframe(display_df, hide_index=True,use_container_width=True)
-    create_sum_table(csv_path)
+    create_sum_table(group_dfs)
 
-def build_summary_rows(csv_paths):
+def build_summary_rows(group_dfs):
     """
     Shared builder for the Project Detail & Statistical Summary table,
     reused by the on-screen table and the HTML/PDF report exports.
     """
     summary_data = {
-        'Organism': st.session_state.get('organism','N/A'),
-        'Clevage Enzyme': st.session_state.get('clevage_enz','-'),
-        'Missed Cleavages': st.session_state.get('miss_cle','-'),
+        'Organism': st.session_state.get('api_payload',{}).get('organism','N/A'),
+        'Clevage Enzyme': st.session_state.get('api_payload',{}).get('clevage_enz','-'),
+        'Missed Cleavages': st.session_state.get('api_payload',{}).get('miss_cle','-'),
     }
 
-    for file in csv_paths:
-        file_name = os.path.basename(file)
-        display_sheet_name = get_group_names(file_name)  # Use the regex function to extract the sheet name
-        group_detail = map_group_detail(display_sheet_name)
-        df = pd.read_csv(file)  # Read the CSV file into a DataFrame
-
+    for group_name, df in group_dfs.items():
         if 'nPepSeq' not in df.columns:
-            st.warning(f"Skipping '{display_sheet_name}' in {file_name}: Required column 'nPepSeq' not found.")
             continue
-
+        group_detail = map_group_detail(group_name)
         total_peptides = df['nPepSeq'].sum()
         group_bioac = df['Bioactivity'].nunique()
-        summary_data[f"{display_sheet_name} {group_detail} - Total Peptides"] = f"{total_peptides:,}"
-        summary_data[f"{display_sheet_name} - Unique Bioactivities"] = f"{group_bioac:,}"
+        
+        summary_data[f"{group_name} {group_detail} - Total Peptides"] = f"{total_peptides:,}"
+        summary_data[f"{group_name} - Unique Bioactivities"] = f"{group_bioac:,}"
 
     return pd.DataFrame(list(summary_data.items()), columns=["Parameter", "Detail"])
 
-def create_sum_table(csv_paths):
+
+def create_sum_table(group_dfs):
     """
     Creates a summary table for all uploaded Excel files,
     showing the total peptide sequences for each sheet.
     """
     st.markdown("## Project Detail & Statistical Summary")
-    details_df = build_summary_rows(csv_paths)
+    details_df = build_summary_rows(group_dfs)
     st.table(details_df)
     st.markdown("<hr style='margin-bottom: 20px; margin-top: 10px;'>", unsafe_allow_html=True)
 
@@ -419,9 +461,7 @@ def generate_pdf_report(csv_paths):
     buffer.seek(0)
     return buffer.getvalue()
              
-
-def render_group_tab(group_name,csv_file):
-
+def render_group_tab(group_name,group_dfs):
     # For render each group detail
     group_detail = map_group_detail(group_name)
     st.header(f'Detail Analysis: {group_name} {group_detail}')
@@ -429,27 +469,15 @@ def render_group_tab(group_name,csv_file):
     limit_key = f'limit_{group_name}'
     if limit_key not in st.session_state:
         st.session_state[limit_key] = 10
-    # Identify Correct File
-    target_file = None
-    for f in csv_file:
-        file_name_only = os.path.basename(f)
-        if get_group_names(file_name_only) == group_name:
-            target_file = f
-            break
-    if target_file is None:
+
+    df_raw = group_dfs.get(group_name)
+    if df_raw is None:
         st.info(f"No data in {group_name}.")
         return
-    #Load Data
-    df, _, _ = load_prep_data(target_file)
+    df, _, _ = load_prep_data(df_raw)
     if df is None:
-        st.error("Error reading uploaded data.")
+        st.error("Error reading data.")
         return
-
-    # Get a list of unique bioactivities found in the uploaded CSV
-    #group_detail = map_group_detail(group_name)
-    #short_id = group_name.replace('Group','G')    
-    #st.markdown(f"#### 🟢 **{short_id}** {group_detail} — Bioactivity Summary")
-
     # Create Table header
     h1, h2, h3, h4, h5 = st.columns([0.5, 3, 1.5, 1.5, 1.5])
     with h1: st.markdown("#",unsafe_allow_html=True)
@@ -479,27 +507,24 @@ def render_group_tab(group_name,csv_file):
         with c2: st.markdown(bioactivity,unsafe_allow_html=True)
         with c3: st.markdown(count,unsafe_allow_html=True)
         with c4:
-            interesed_list =st.session_state.get('Interested_Bioactivity',[])
-            lower_bioac = bioactivity.lower()
-            if lower_bioac in interesed_list:
-                file_path = get_sequence_path(group_name,bioactivity)
-                if file_path and os.path.exists(file_path):
-                    with open(file_path, 'rb') as f:
-                        csv_data = f.read()
+            if bioactivity.lower() in interesed_list:
+                csv_bytes = fetch_sequence_csv(job_uuid, group_name, bioactivity)
+                if csv_bytes:
                     st.download_button(
                         label="Download CSV",
-                        data=csv_data,
+                        data=csv_bytes,
                         file_name=f"{bioactivity}.csv",
                         mime="text/csv",
                         key=f"dl_csv_{group_name}_{index}"
                     )
                 else:
                     st.markdown('No File',unsafe_allow_html=True)
-            else: 
-                st.markdown('-',unsafe_allow_html=True) #ถ้าไม่ได้อยู่ในที่ user เลือกจะไม่แสดงปุ่มโหลด
+            else:
+                st.markdown('-')
         with c5:
             st.markdown('-')
         st.markdown("<hr style='margin-bottom: 10px; margin-top: 5px;'>", unsafe_allow_html=True)
+
     if total_rows > current_limit:
         col_space1, col_space2,col_btn = st.columns([2, 2, 1])
         with col_btn:

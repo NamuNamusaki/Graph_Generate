@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import json
 import requests
+import re
+import datetime
 
 st.set_page_config(page_title="Upload Sample", layout="centered")
 
@@ -171,6 +173,24 @@ elif st.session_state['upload_step'] == 2:
             st.rerun()
     with col2:
         if st.button('Confirm and Process',type='primary'):
-            st.session_state['process_complete'] = False
-            st.session_state['upload_step'] = 1
-            st.switch_page('pages/04_Waiting.py')
+            with st.spinner('Sending data to Backend...'):
+                try:
+                    current_user = st.session_state['username']
+                    project_name = re.sub(r'\W+', ' ', payload['project_name'])
+                    submitted_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    job_uuid = f'{current_user}_{project_name}_{submitted_at}'
+                    payload['job_uuid'] = job_uuid
+
+                    api_url = 'http://127.0.0.1:8000/api/jobs'
+                    response = requests.post(api_url, json=payload)
+                    if response.status_code == 200:
+                        st.session_state['job_id'] = response.json().get('job_id')
+                        st.session_state['processing_complete'] = False
+                        st.session_state['waiting_step'] = 1
+                        st.switch_page('pages/04_Waiting.py')
+                    else:
+                        st.error(f'Backend Error {response.status_code}: {response.text}"')
+                except requests.exceptions.RequestException as e:
+                    st.error(f"⚠️ Could not connect to the backend API. Details: {e}")
+                        
+                    

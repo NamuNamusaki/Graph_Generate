@@ -5,31 +5,28 @@ import requests
 
 st.set_page_config(page_title="Job Status", layout="centered")
 
-# 1. Session Login Checking
-if "logged_in" not in st.session_state:
-    st.session_state["logged_in"] = False
-if "uploaded_files" not in st.session_state:
-    st.session_state["uploaded_files"] = []
-if "raw_sequence" not in st.session_state:
-    st.session_state["raw_sequence"] = None
-if "processing_complete" not in st.session_state:
-    st.session_state["processing_complete"] = False
-# For page changing in jobstatus
-if "waiting_step" not in st.session_state: 
-    st.session_state["waiting_step"] = 1
-if "noti_email" not in st.session_state:
-    st.session_state["noti_email"] = ""
-
-# 2. SECURITY CHECKS
+# SECURITY CHECKS
 if not st.session_state["logged_in"]:
     st.warning("⚠️ Please log in to view this page.")
     st.stop()
 
-if not st.session_state["uploaded_files"] and not st.session_state["raw_sequence"]:
-    st.warning("⚠️ No files detected for processing.")
-    st.switch_page("pages/03_Upload.py")
+if 'job_id' not in st.session_state:
+    st.error("⚠️ No active analysis job found in memory.")
+    st.info("Please return to the Upload page to submit a new sequence.")
+    if st.button("Go to Upload Page", type="primary"):
+        st.switch_page("pages/03_Upload.py")
+    st.stop()
+if 'waiting_step' not in st.session_state:
+    st.session_state['waiting_step'] = 1
+if 'noti_email' not in st.session_state:
+    st.session_state['noti_email'] = ''
+if 'processing_complete' not in st.session_state:
+    st.session_state['processing_complete'] = False
 
-# Helper ============================
+job_uuid = st.session_state['job_id']
+api_url = f"http://127.0.0.1:8000/api/status/{job_uuid}"
+
+# Helper Function ============================
 Email_patern = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 def validate_email(value:str) -> bool:
@@ -47,7 +44,8 @@ def status_badge(label: str,kind:str) ->str:
     colors ={
         'completed': ("#8DB080", "#ffffff"),
         'running': ("#6b95ea", "#ffffff"),
-        'pending' : ("#e9ecef", "#6c757d"),
+        'queue' : ("#e9ecef", "#6c757d"),
+        'failed' : ("#dc3545", "#ffffff")
     }
     kind_key = kind.lower().strip()
     bg,fg = colors.get(kind_key, colors['pending'])
@@ -90,20 +88,13 @@ def render_job_status_table(current_step_index:int) -> str:
     </div>
     """
 # PIPELINE DEFINITION
-# --- SIMULATION ONLY -------------------------------------------------------
-# Once your FastAPI backend + Celery worker are wired up, delete PIPELINE_STEPS
-# and the loop in Step 2 below, and instead poll a real endpoint, e.g.:
-#     GET /jobs/{job_id}/status  ->  {"current_step": ..., "steps": [...]}
-# ---------------------------------------------------------------------------
 pipeline_step = [
-    {'name': 'Reading FASTA/Sequence','seconds':2},
-    {'name': 'In silico Digstion','seconds':3},
-    {'name': 'Peptide Generation','seconds':4},
-    {'name': 'Bioactivity Matching','seconds':5},
-    {'name': 'Result Preparation','seconds':2}
+    {'name': 'Reading FASTA/Sequence'},
+    {'name': 'In silico Digstion'},
+    {'name': 'Peptide Generation'},
+    {'name': 'Bioactivity Matching'},
+    {'name': 'Result Preparation'}
 ]
-total_sec = sum(step['seconds'] for step in pipeline_step)
-tick = 0.1 # how often the UI refreshes -- smaller = smoother progress bar
 
 if 'step_elapsed' not in st.session_state:
     st.session_state['step_elapsed'] = [0.0 for _ in pipeline_step]
@@ -137,8 +128,7 @@ if st.session_state['waiting_step'] == 1:
         col1,col2 = st.columns([1,6])
         with col1:
             st.markdown(
-                '<div style="width:48px; height:48px; background:#ced4da; '
-                'border-radius:8px; display:flex; align-items:center; '
+                '<div style="width:48px; height:48px; background:#ced4da; border-radius:8px; display:flex; align-items:center; '
                 'justify-content:center; font-size:1.4rem;">✉️</div>'
                 ,unsafe_allow_html=True
             )
@@ -148,8 +138,7 @@ if st.session_state['waiting_step'] == 1:
                 'Notification Email',
                 value  = st.session_state['noti_email'],
                 placeholder='research@university.ac.th',
-                label_visibility='collapsed'
-            )
+                label_visibility='collapsed')
 
     st.markdown(
             """
@@ -166,19 +155,22 @@ if st.session_state['waiting_step'] == 1:
         process_clicked = st.button('Track Your Job Status',type='primary',use_container_width=True)
     with home_col:
         back_home_clicked = st.button('Back to Home',type='primary',use_container_width=True)
+
     if process_clicked:
         if not validate_email(email):
             st.error("⚠️ Please enter a valid email address before continuing.")
         else:
             st.session_state['noti_email'] = email.strip()
+            # Send to backend using request.post()
             st.session_state['waiting_step'] = 2
             st.rerun()
         if back_home_clicked:
             st.switch_page('pages/01_Home.py')
 
-# Second state == Job Progress tracker        
+# Step2 Job Progress tracker(APO Polling)      
 elif st.session_state['waiting_step'] == 2:
     st.title('Job Status')
+    st.markdown(f'**Job ID:** `{job_uuid}`')
 
     header_left, header_right = st.columns([3,2])
     status_placeholder = header_left.empty()
@@ -190,31 +182,45 @@ elif st.session_state['waiting_step'] == 2:
 
     st.markdown("#### Pipeline Steps")
     table_placeholder = st.empty()
+    error_placeholder = st.empty()
 
     if not st.session_state['processing_complete']:
         status_placeholder.markdown(status_badge('● Running','running'),unsafe_allow_html=True)
-        #results_placeholder.button('View your result',disabled=True,width=100)
-        
-        elapsed_total = 0.0
-        for step_index,step in enumerate(pipeline_step):
-            step_elapsed =0.0
-            while step_elapsed < step['seconds']:
-                time.sleep(tick)
-                step_elapsed += tick
-                elapsed_total += tick
-                st.session_state['step_elapsed'][step_index] = step_elapsed
 
-                pct = min(100,int(elapsed_total/total_sec*100))
-                remaiming = max(0,total_sec-elapsed_total)
+        # API Polling Loop        
+        while True:
+            try:
+                response = requests.get(api_url)
+                response.raise_for_status()
+                data = response.json()
+                step_current = data.get('status','UNKNOWN').upper()
+                pct = data.get('progress',0)
+                current_step_index = data.get('step_current',0)
+                # Update frontend Time
+                if 0 <= current_step_index < len(pipeline_step) and step_current in ['RUNNING','QUEUE']:
+                    st.session_state['step_elapsed'][current_step_index] += 3.0
 
-                progress_pct_placeholder.markdown(f"### {pct}%")
+                progress_pct_placeholder.markdown(f"### {pct:.0f}%")
                 progress_bar_placeholder.progress(pct)
                 table_placeholder.markdown(
-                    render_job_status_table(step_index), unsafe_allow_html=True
+                    render_job_status_table(current_step_index, st.session_state['step_elapsed']), unsafe_allow_html=True
                 )
-            st.session_state['step_elapsed'][step_index] = step['seconds']
-        st.session_state['processing_complete'] = True
-    
+                if step_current == 'COMPLETED':
+                    st.session_state['processing_complete'] = True
+                    break
+                elif step_current == 'FAILED':
+                    status_placeholder.markdown(status_badge('● Failed', 'failed'), unsafe_allow_html=True)
+                    error_msg = data.get("message", "An unknown error occurred on the server.")
+                    error_placeholder.error(f"❌ **Analysis Failed:** {error_msg}")
+                    if st.button("Return to Upload Page"):
+                        del st.session_state['job_id']
+                        st.switch_page("pages/03_Upload.py")
+                    st.stop()
+            except requests.exceptions.RequestException as e:
+                error_placeholder.warning(f"⚠️ Connection interrupted. Retrying... (Details: {e})")
+                time.sleep(5)
+                error_placeholder.empty()
+                    
     if st.session_state['processing_complete']:
         status_placeholder.markdown(status_badge('● Completed','completed'),unsafe_allow_html=True)
         results_placeholder.empty()
