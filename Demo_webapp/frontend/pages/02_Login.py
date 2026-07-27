@@ -15,14 +15,19 @@ USER_CREDENTIALS = {
 }
 
 with st.form("login_form"):
-    username = st.text_input("Username")
-    password = st.text_input("Password", type="password")
-    submitted = st.form_submit_button("Login", type="primary")
+    username = st.text_input("Username",key='login_username')
+    password = st.text_input("Password", type="password", key='login_password')
+    submitted_login = st.form_submit_button("Login", type="primary")
 
-    if submitted:
-        if username in USER_CREDENTIALS and USER_CREDENTIALS[username] == password:
+    if submitted_login:
+        login_payload = {
+            "username": st.session_state.login_username,
+            "password": st.session_state.login_password
+        }
+        # response = requests.post("http://api/login", json=login_payload)
+        if login_payload["username"] and login_payload["password"]:
             st.session_state["logged_in"] = True
-            st.session_state["username"] = username
+            st.session_state["username"] = login_payload["username"]
             st.success("Login successful! Redirecting...")
             st.switch_page("pages/01_Home.py")
         else:

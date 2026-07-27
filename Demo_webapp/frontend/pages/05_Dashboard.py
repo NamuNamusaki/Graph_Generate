@@ -5,6 +5,17 @@ import os
 import glob
 import streamlit as st
 import re
+import io
+from datetime import datetime
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+from PIL import Image as PILImage
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import cm
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image as RLImage, Table, TableStyle, PageBreak
 
 st.set_page_config(page_title="Result Dashboard", layout="centered")
 
@@ -28,8 +39,8 @@ def format_bioac_name(name):
     formatted_parts = [p[0].upper() +p[1:] if len(p) >0 else p for p in parts]
     return ' '.join(formatted_parts)
 
-def get_display_names(file_name):
-    #Extracts the sheet name using regex.
+def get_group_names(file_name):
+    # Extracts the sheet name using regex.
     raw_name = file_name.replace('.csv', '')  # Remove the .csv extension (if using the file fromapi or upload usinf.name instead)
     pattern = r'^RankBioactivity_G(\d+)([a-z]?)(?:_(\d+)Enz)?(?:_(.+))?$'
     match = re.match(pattern, raw_name)
@@ -37,7 +48,7 @@ def get_display_names(file_name):
     if not match:
         return raw_name # Return original sheet name if it doesn't match
     group_num, sub_letter, enz_count, suffix = match.groups()
-    group_label = f"Group {group_num}{sub_letter}"
+    group_label = f"Group {group_num}{sub_letter if sub_letter else ''}"
     #display_name = f"{group_label} ({enz_count} Enzyme{'s' if enz_count != '1' else ''})"
     return group_label
 
@@ -53,7 +64,7 @@ def map_group_detail(file):
 @st.cache_data(show_spinner=False) # Cache for speed
 def load_prep_data(file):
     #file.seek(0)
-    df = pd.read_csv(file)
+    df = pd.read_csv(file,encoding='utf-8')
     if 'nPepSeq' not in df.columns or 'Bioactivity' not in df.columns:
         return None,0,"0"
     df['Raw_bioactiity'] = df['Bioactivity']
@@ -104,7 +115,7 @@ def plot_pie(filtered_df,formatted_total):
         pie_rest = filtered_df.iloc[9:]  #Keep all other item
         other_sum = pie_rest['nPepSeq'].sum()
         other_row = pd.DataFrame({
-            'Bioactivity': ['Other'], 
+            'Bioactivity': ['Others'], 
             'nPepSeq': [other_sum], 
             'Hover_Percentage': ['']
         })
@@ -146,9 +157,25 @@ def summary_dashboard(csv_path):
     """
     #Build Grid Column
     st.header("Summary Dashboard")
-    col_select, _ = st.columns([1, 3])
+    col_select, col_html, col_pdf = st.columns([2, 1, 1])
     with col_select:
         chart_type = st.selectbox("Chart Type", options=["Pie Chart", "Bar Chart"],key='summary_chart_type')
+    with col_html:
+        st.download_button(
+            "📄 Download HTML Report",
+            data=generate_html_report(csv_path),
+            file_name="bioactivity_dashboard_report.html",
+            mime="text/html",
+            use_container_width=True,
+        )
+    with col_pdf:
+        st.download_button(
+            "📑 Download PDF Report",
+            data=generate_pdf_report(csv_path),
+            file_name="bioactivity_dashboard_report.pdf",
+            mime="application/pdf",
+            use_container_width=True,
+        )
     for i, file in enumerate(csv_path):         
         # Create new row every 2 items
         if i % 2 == 0:
@@ -157,7 +184,7 @@ def summary_dashboard(csv_path):
         
         # 1. Get Details from File
         file_name = os.path.basename(file)
-        group_name = get_display_names(file_name)
+        group_name = get_group_names(file_name)
         group_detail = map_group_detail(group_name)
 
         # 2. Load and Process Data
@@ -205,19 +232,18 @@ def summary_dashboard(csv_path):
                     fig,pie_rest = plot_pie(filtered_df, formatted_total)
                     st.plotly_chart(fig, use_container_width=True)
                     if not pie_rest.empty:
-                        with st.expander(f'View All of Other ({len(pie_rest)} Bioactivities)'):
+                        with st.expander(f'View All of Others ({len(pie_rest)} Bioactivities)'):
                             display_df = pie_rest[['Bioactivity', 'nPepSeq', 'Hover_Percentage']].rename(
                                 columns={'nPepSeq': 'Count', 'Hover_Percentage': 'Percentage'}
                             )
                             st.dataframe(display_df, hide_index=True,use_container_width=True)
     create_sum_table(csv_path)
 
-def create_sum_table(csv_paths):
+def build_summary_rows(csv_paths):
     """
-    Creates a summary table for all uploaded Excel files, 
-    showing the total peptide sequences for each sheet.
+    Shared builder for the Project Detail & Statistical Summary table,
+    reused by the on-screen table and the HTML/PDF report exports.
     """
-    st.markdown("## Project Detail & Statistical Summary")
     summary_data = {
         'Organism': st.session_state.get('organism','N/A'),
         'Clevage Enzyme': st.session_state.get('clevage_enz','-'),
@@ -225,27 +251,177 @@ def create_sum_table(csv_paths):
     }
 
     for file in csv_paths:
-        #raw_name = file.name.replace('.csv', '')
         file_name = os.path.basename(file)
-        display_sheet_name = get_display_names(file_name)  # Use the regex function to extract the sheet name
+        display_sheet_name = get_group_names(file_name)  # Use the regex function to extract the sheet name
         group_detail = map_group_detail(display_sheet_name)
         df = pd.read_csv(file)  # Read the CSV file into a DataFrame
 
         if 'nPepSeq' not in df.columns:
-            st.warning(f"Skipping '{display_sheet_name}' in {file.name}: Required column 'nPepSeq' not found.")
+            st.warning(f"Skipping '{display_sheet_name}' in {file_name}: Required column 'nPepSeq' not found.")
             continue
-        
+
         total_peptides = df['nPepSeq'].sum()
         group_bioac = df['Bioactivity'].nunique()
         summary_data[f"{display_sheet_name} {group_detail} - Total Peptides"] = f"{total_peptides:,}"
         summary_data[f"{display_sheet_name} - Unique Bioactivities"] = f"{group_bioac:,}"
 
-    details_df = pd.DataFrame(list(summary_data.items()), columns=["Parameter", "Detail"])
+    return pd.DataFrame(list(summary_data.items()), columns=["Parameter", "Detail"])
+
+def create_sum_table(csv_paths):
+    """
+    Creates a summary table for all uploaded Excel files,
+    showing the total peptide sequences for each sheet.
+    """
+    st.markdown("## Project Detail & Statistical Summary")
+    details_df = build_summary_rows(csv_paths)
     st.table(details_df)
     st.markdown("<hr style='margin-bottom: 20px; margin-top: 10px;'>", unsafe_allow_html=True)
+
+# --- Export: HTML report (interactive Plotly charts + summary table) -------
+@st.cache_data(show_spinner="Preparing HTML report...")
+def generate_html_report(csv_paths):
+    details_df = build_summary_rows(csv_paths)
+    table_html = details_df.to_html(index=False, border=0, classes="summary-table")
+
+    chart_sections = []
+    for i, file in enumerate(csv_paths):
+        file_name = os.path.basename(file)
+        group_name = get_group_names(file_name)
+        group_detail = map_group_detail(group_name)
+        plot_df, total_peptides, formatted_total = load_prep_data(file)
+        if plot_df is None:
+            continue
+
+        bar_fig = plot_bar(plot_df, formatted_total, f"All ({len(plot_df)})")
+        pie_fig, _ = plot_pie(plot_df, formatted_total)
+        # Embed the Plotly library once (first chart) so the file works offline.
+        bar_html = bar_fig.to_html(full_html=False, include_plotlyjs=(i == 0))
+        pie_html = pie_fig.to_html(full_html=False, include_plotlyjs=False)
+
+        chart_sections.append(f"""
+        <section class="group-section">
+            <h2>{group_name} : {group_detail}</h2>
+            <div class="chart-row">
+                <div class="chart-box">{bar_html}</div>
+                <div class="chart-box">{pie_html}</div>
+            </div>
+        </section>
+        """)
+
+    generated_at = datetime.now().strftime("%Y-%m-%d %H:%M")
+    return f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Bioactivity Dashboard Report</title>
+<style>
+    body {{ font-family: Arial, sans-serif; margin: 30px; color:#212529; }}
+    h1 {{ margin-bottom:4px; }}
+    .meta {{ color:#6c757d; margin-bottom:30px; }}
+    table.summary-table {{ border-collapse: collapse; width:100%; margin-top:10px; }}
+    table.summary-table th, table.summary-table td {{ border:1px solid #dee2e6; padding:8px 12px; text-align:left; }}
+    table.summary-table th {{ background:#f1f3f5; }}
+    .group-section {{ margin-top:40px; }}
+    .chart-row {{ display:flex; gap:20px; flex-wrap:wrap; }}
+    .chart-box {{ flex:1; min-width:420px; }}
+</style>
+</head>
+<body>
+    <h1>Peptide Sequence Bioactivity Dashboard - Summary Report</h1>
+    <div class="meta">Generated: {generated_at}</div>
+    <h2>Project Detail &amp; Statistical Summary</h2>
+    {table_html}
+    {''.join(chart_sections)}
+</body>
+</html>"""
+
+# --- Export: PDF report (static Matplotlib charts + summary table) ---------
+def render_static_bar(plot_df, formatted_total, top_n=15):
+    data = plot_df.head(top_n).iloc[::-1]
+    fig, ax = plt.subplots(figsize=(9, max(3, 0.4 * len(data))))
+    ax.barh(data['Bioactivity'], data['nPepSeq'], color="#3E7CB1")
+    ax.set_xlabel("Count of Peptide Sequences")
+    ax.set_title(f"Total Peptide Sequences: {formatted_total}", fontsize=11)
+    for i, v in enumerate(data['nPepSeq']):
+        ax.text(v, i, f" {v:,}", va='center', fontsize=8)
+    fig.tight_layout()
+    buf = io.BytesIO()
+    fig.savefig(buf, format='png', dpi=150)
+    plt.close(fig)
+    buf.seek(0)
+    return buf
+
+def render_static_pie(plot_df, formatted_total, top_n=9):
+    if len(plot_df) > top_n + 1:
+        top = plot_df.head(top_n)
+        rest_sum = plot_df.iloc[top_n:]['nPepSeq'].sum()
+        labels = list(top['Bioactivity']) + ['Others']
+        values = list(top['nPepSeq']) + [rest_sum]
+    else:
+        labels = list(plot_df['Bioactivity'])
+        values = list(plot_df['nPepSeq'])
+    fig, ax = plt.subplots(figsize=(7, 7))
+    ax.pie(values, labels=labels, autopct='%1.1f%%', textprops={'fontsize': 8})
+    ax.set_title(f"Top {top_n} Bioactivity Groups | Total: {formatted_total}", fontsize=11)
+    fig.tight_layout()
+    buf = io.BytesIO()
+    fig.savefig(buf, format='png', dpi=150)
+    plt.close(fig)
+    buf.seek(0)
+    return buf
+
+def _pdf_scaled_image(png_buf, target_width):
+    png_buf.seek(0)
+    with PILImage.open(png_buf) as img:
+        px_w, px_h = img.size
+    png_buf.seek(0)
+    return RLImage(png_buf, width=target_width, height=target_width * px_h / px_w)
+
+@st.cache_data(show_spinner="Preparing PDF report...")
+def generate_pdf_report(csv_paths):
+    styles = getSampleStyleSheet()
+    story = [
+        Paragraph("Peptide Sequence Bioactivity Dashboard - Summary Report", styles["Title"]),
+        Paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}", styles["Normal"]),
+        Spacer(1, 12),
+        Paragraph("Project Detail & Statistical Summary", styles["Heading2"]),
+    ]
+
+    details_df = build_summary_rows(csv_paths)
+    table_rows = [details_df.columns.tolist()] + details_df.values.tolist()
+    summary_table = Table(table_rows, colWidths=[8 * cm, 9 * cm])
+    summary_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f1f3f5")),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#dee2e6")),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    ]))
+    story.append(summary_table)
+    story.append(PageBreak())
+
+    for file in csv_paths:
+        file_name = os.path.basename(file)
+        group_name = get_group_names(file_name)
+        group_detail = map_group_detail(group_name)
+        plot_df, total_peptides, formatted_total = load_prep_data(file)
+        if plot_df is None:
+            continue
+
+        story.append(Paragraph(f"{group_name} : {group_detail}", styles["Heading2"]))
+        for png_buf in (render_static_bar(plot_df, formatted_total), render_static_pie(plot_df, formatted_total)):
+            story.append(_pdf_scaled_image(png_buf, 15 * cm))
+            story.append(Spacer(1, 14))
+        story.append(PageBreak())
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=1.5 * cm, bottomMargin=1.5 * cm)
+    doc.build(story)
+    buffer.seek(0)
+    return buffer.getvalue()
              
 
 def render_group_tab(group_name,csv_file):
+
     # For render each group detail
     group_detail = map_group_detail(group_name)
     st.header(f'Detail Analysis: {group_name} {group_detail}')
@@ -257,7 +433,7 @@ def render_group_tab(group_name,csv_file):
     target_file = None
     for f in csv_file:
         file_name_only = os.path.basename(f)
-        if get_display_names(file_name_only) == group_name:
+        if get_group_names(file_name_only) == group_name:
             target_file = f
             break
     if target_file is None:
@@ -284,7 +460,7 @@ def render_group_tab(group_name,csv_file):
 
     st.markdown("<hr style='margin-bottom: 10px; margin-top: 5px;'>", unsafe_allow_html=True)
 
-    # Sort Datainthetable
+    # Sort Datail of the table in group 1 to 3b
     interesed_list =st.session_state.get('Interested_Bioactivity',[])
     df['is_prior'] = df['Bioactivity'].str.lower().isin(interesed_list)
     df = df.sort_values(by=['is_prior', 'nPepSeq'], ascending=[False, False])
@@ -337,9 +513,74 @@ def render_group_tab(group_name,csv_file):
                     st.rerun()
 
     
-def reder_ml_tab():
+
+# --- MOCKUP ONLY -------------------------------------------------------
+# Once the FastAPI backend + prediction worker are wired up, replace
+# MODEL_INFO / generate_mock_ml_predictions with the real model metadata
+# and CSV result files produced by the worker/API job.
+# -------------------------------------------------------------------------
+MODEL_INFO = [
+    {
+        "key": "athp",
+        "name": "ATHP",
+        "description": "Antihypertensive model.",
+        "n_predictions": 1240,
+    },
+    {
+        "key": "amp",
+        "name": "AMP",
+        "description": "Antimicrobial model.",
+        "n_predictions": 1240,
+    },
+    {
+        "key": "np",
+        "name": "NP",
+        "description": "Neuropeptide model.",
+        "n_predictions": 1240,
+    },
+]
+
+@st.cache_data(show_spinner=False)
+def generate_mock_ml_predictions(model_key, n_rows):
+    """Placeholder result generator; replace with the worker/API CSV output."""
+    prefix = model_key.upper().replace("_", "")[:6]
+    bioactivities = ["AMP", "ACE inhibitor", "Antioxidant", "Anticancer"] * (n_rows // 4 + 1)
+    return pd.DataFrame({
+        "PeptideSequence": [f"{prefix}{i:04d}" for i in range(1, n_rows + 1)],
+        "PredictedBioactivity": bioactivities[:n_rows],
+        "ConfidenceScore": [round(0.5 + (i % 50) / 100, 2) for i in range(n_rows)],
+    })
+
+def render_ml_tab():
     st.header("ML Prediction")
-    st.info("the Ml prediction result")
+    st.info("Mockup preview — these results will be populated from the worker/API once the prediction job completes.")
+
+    h1, h2, h3, h4, h5 = st.columns([0.5, 2, 3.5, 1.5, 1.5])
+    with h1: st.markdown("#", unsafe_allow_html=True)
+    with h2: st.markdown("Model Name", unsafe_allow_html=True)
+    with h3: st.markdown("Description", unsafe_allow_html=True)
+    with h4: st.markdown("No. of Predictions", unsafe_allow_html=True)
+    with h5: st.markdown("CSV Download", unsafe_allow_html=True)
+    st.markdown("<hr style='margin-bottom: 10px; margin-top: 5px;'>", unsafe_allow_html=True)
+
+    for index, model in enumerate(MODEL_INFO):
+        c1, c2, c3, c4, c5 = st.columns([0.5, 2, 3.5, 1.5, 1.5])
+        with c1: st.markdown(f"{index + 1}.", unsafe_allow_html=True)
+        with c2: st.markdown(f"**{model['name']}**", unsafe_allow_html=True)
+        with c3: st.markdown(model['description'], unsafe_allow_html=True)
+        with c4: st.markdown(f"{model['n_predictions']:,}", unsafe_allow_html=True)
+        with c5:
+            mock_df = generate_mock_ml_predictions(model['key'], model['n_predictions'])
+            st.download_button(
+                label="Download CSV",
+                data=mock_df.to_csv(index=False).encode("utf-8"),
+                file_name=f"{model['key']}_predictions.csv",
+                mime="text/csv",
+                key=f"dl_ml_{model['key']}"
+            )
+        st.markdown("<hr style='margin-bottom: 10px; margin-top: 5px;'>", unsafe_allow_html=True)
+
+
 
 # Get Sequence File function
 def get_sequence_path(group_name,bioactivity_name):
@@ -374,4 +615,4 @@ with tabs[3]:
 with tabs[4]:
     render_group_tab("Group 3b", csv_files)
 with tabs[5]:
-    reder_ml_tab()
+    render_ml_tab()

@@ -1,6 +1,0 @@
-[theme]
-primaryColor = "#81b451" # The primary accent color for interactive elements (buttons, sliders, etc.)
-backgroundColor = "#FFFDFA"
-secondaryBackgroundColor = "#F0F2F6" # The background color used for the sidebar and most interactive widgets
-textColor = "#31333F"
-font = "sans serif"

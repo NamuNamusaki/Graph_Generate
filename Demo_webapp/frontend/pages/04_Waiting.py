@@ -1,6 +1,7 @@
 import streamlit as st
 import time
 import re
+import requests
 
 st.set_page_config(page_title="Job Status", layout="centered")
 
