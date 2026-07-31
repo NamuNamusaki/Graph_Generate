@@ -468,7 +468,7 @@ def render_group_tab(group_name,group_dfs):
     # Limit the Display
     limit_key = f'limit_{group_name}'
     if limit_key not in st.session_state:
-        st.session_state[limit_key] = 10
+        st.session_state[limit_key] = 10  
 
     df_raw = group_dfs.get(group_name)
     if df_raw is None:
