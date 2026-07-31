@@ -29,6 +29,7 @@ if 'list_step_total' not in st.session_state:
 
 job_uuid = st.session_state['job_id']
 api_url = f"http://127.0.0.1:8000/api/status/{job_uuid}"
+auth_headers = {"Authorization": f"Bearer {st.session_state.get('access_token', '')}"}
 
 # Helper Function ============================
 Email_patern = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -59,14 +60,14 @@ def status_badge(label: str,kind:str) ->str:
         f'display:inline-block;">{label}</span>'
     )
 
-def render_job_status_table(current_step_index:int) -> str:
+def render_job_status_table(step_current:int,list_step_total:list) -> str:
     rows_html = ""
-    for i,step in enumerate(pipeline_step):
+    for i,step in enumerate(list_step_total):
         elapsed = st.session_state['step_elapsed'][i]
-        if i < current_step_index:
+        if i < step_current:
             status_html =status_badge('Completed','completed')
             time_text = format_hms(elapsed)
-        elif i == current_step_index:
+        elif i == step_current:
             status_html = status_badge('Running','running')
             time_text = format_hms(elapsed)
         else:
@@ -114,8 +115,7 @@ if st.session_state['waiting_step'] == 1:
                     A notification will be sent to your email address.
                 </p>
             </div>
-            ''',
-            unsafe_allow_html=True,
+            ''', unsafe_allow_html=True,
         )
     
     with st.container(border=True):
@@ -238,6 +238,7 @@ elif st.session_state['waiting_step'] == 2:
                 st.error(f'Connection Error, Retrying... : {e}')
             time.sleep(3)
             error_placeholder.empty()
+            
     # Complete 100%           
     if st.session_state['processing_complete']:
         status_placeholder.markdown(status_badge('● Completed','completed'),unsafe_allow_html=True)

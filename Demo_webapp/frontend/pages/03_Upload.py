@@ -28,6 +28,19 @@ def process_fasta_txt(raw_text:str) -> str:
         cleaned = f'>Pasted_sequence_1\n{cleaned}'
     return cleaned
 
+@st.cache_data
+def load_bioactivity_map():
+    """Reads the CSV and creates a Dictionary mapping Names to IDs."""
+    try:
+        df = pd.read_csv('bioactivities.csv')
+        formatted_name = df['bioactivity_name'].apply(format_bioac_name)
+        df['bioactivity_name'] = formatted_name
+        # Creates a dictionary: {"ACE Inhibitory": 1, "Antioxidant": 2, ...}
+        return dict(zip(df['bioactivity_name'], df['bioactivity_id']))
+    except FileNotFoundError:
+        st.error("⚠️ Database file 'bioactivities.csv' is missing! Please ensure it exists in the root directory.")
+        return {}
+
 
 st.title("Uploading Page")
 st.divider()
@@ -50,13 +63,14 @@ if st.session_state['upload_step'] == 1:
         st.text_area("Description",key='description')
     st.divider()
     #Bioactivity Selection
-    try:
-        bioac_df = pd.read_csv('bioactivity.csv')
-        bioac_df['Bioactivity'] = bioac_df['Bioactivity'].apply(format_bioac_name)
-        all_bioactivities = bioac_df['Bioactivity'].tolist()
-    except FileNotFoundError:
-        all_bioactivities = ["ACE Inhibitory", "Antioxidant", "Antimicrobial", "Anti-inflammatory"]
-
+    st.subheader("2. Analysis Parameters")
+    name_to_id = load_bioactivity_map()
+    if name_to_id:
+        all_bioactivities = list(name_to_id.keys())
+    else:
+        fallback = ["ACE Inhibitory", "Antioxidant", "Antimicrobial", "Anti-inflammatory"]
+        all_bioactivities = [format_bioac_name(name) for name in fallback]
+    
     st.multiselect(
                     "Select Bioactivities (Max 3):*",
                     options=all_bioactivities,
@@ -88,12 +102,15 @@ if st.session_state['upload_step'] == 1:
         if not st.session_state.project_name or not st.session_state.sample_name :
             st.error('Please fill in both the Project Name and Sample Name.')
             st.stop()
+        elif not st.session_state.bioactivities:
+            st.error('Please select at least one Target bioactivity.')
+            st.stop()
         elif not st.session_state.ml_pred:
             st.error('Please select at least one ML prediction option.')
             st.stop()
 
         fasta_content = ''
-        file_name = 'Pasted_Sequence.fasta'
+        fasta_name = 'Pasted_Sequence.fasta'
 
         file_input = st.session_state.get('fasta_file')
         text_input = st.session_state.get('fasta_text')
@@ -103,14 +120,16 @@ if st.session_state['upload_step'] == 1:
             st.stop()
         elif file_input:
             fasta_content = file_input.getvalue().decode('utf-8',errors='ignore')
-            file_name = file_input.name
+            fasta_name = file_input.name
         elif text_input:
             fasta_content = process_fasta_txt(text_input)
 
         if not fasta_content:
             st.error('Please provide either a valid FASTA file OR pasted text.')
             st.stop()
-            
+
+        selected_ids =[name_to_id[name] for name in st.session_state.bioactivities]
+
         # API PAYLOAD STRUCTURE FOR FASTAPI
         # =======================================================================================
         # Note: Use this is Pydantic model structure for the FastAPI endpoint:
@@ -133,14 +152,16 @@ if st.session_state['upload_step'] == 1:
             "sample_name": st.session_state.sample_name.strip(),
             "organism": st.session_state.organism.strip() or None,
             "description": st.session_state.description.strip() or None,
-            "bioactivities": st.session_state.bioactivities,
+            "list_bioactivities_id": selected_ids,
+            "bioactivities_display": st.session_state.bioactivities,
             "ml_predictions": st.session_state.ml_pred,
             "clevage_enz": st.session_state.clevage_enz,
             "miss_clevages": int(st.session_state.miss_cle),
-            "fasta_content": fasta_content
+            "fasta_content": fasta_content,
+            "input_fasta_path": fasta_name
         }
         st.session_state['api_payload'] = api_payload
-        st.session_state['display_file_name'] = file_name 
+        st.session_state['display_file_name'] = fasta_name 
         st.session_state['upload_step'] = 2
         st.rerun()
 
@@ -168,25 +189,32 @@ elif st.session_state['upload_step'] == 2:
 
     col1,col2,col3 = st.columns([1,1,3])
     with col1:
-        if st.button('edit detail'):
+        if st.button('Edit Detail'):
             st.session_state['upload_step'] = 1
             st.rerun()
     with col2:
         if st.button('Confirm and Process',type='primary'):
             with st.spinner('Sending data to Backend...'):
                 try:
-                    current_user = st.session_state['username']
+                    current_user = st.session_state.get('username', 'user')
                     project_name = re.sub(r'\W+', ' ', payload['project_name'])
-                    submitted_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    submitted_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     job_uuid = f'{current_user}_{project_name}_{submitted_at}'
                     payload['job_uuid'] = job_uuid
 
+                    # 2. Attach JWT security token
+                    headers = {
+                        "Authorization": f"Bearer {st.session_state.get('access_token', '')}"
+                    }
+                    # 3. Send Request
                     api_url = 'http://127.0.0.1:8000/api/jobs'
-                    response = requests.post(api_url, json=payload)
-                    if response.status_code == 200:
-                        st.session_state['job_id'] = response.json().get('job_id')
+                    response = requests.post(api_url, json=payload,headers=headers)
+                    if response.status_code == [200, 201]:
+                        # Keep the data
+                        st.session_state['job_id'] = response.json().get('job_id',job_uuid)
                         st.session_state['processing_complete'] = False
                         st.session_state['waiting_step'] = 1
+                        st.session_state['list_step_total'] = []
                         st.switch_page('pages/04_Waiting.py')
                     else:
                         st.error(f'Backend Error {response.status_code}: {response.text}"')

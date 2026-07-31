@@ -40,6 +40,7 @@ if 'job_id' not in st.session_state:
 
 job_uuid = st.session_state['job_id']
 API_BASE_URL = "http://127.0.0.1:8000/api" # NEED CHANGE!
+AUTH_HEADERS = {"Authorization": f"Bearer {st.session_state.get('access_token', '')}"}
 
 #API FETCHING FUNCTIONS
 @st.cache_data(show_spinner="Fetching data from server...")
@@ -100,7 +101,7 @@ def get_group_names(file_name):
     #display_name = f"{group_label} ({enz_count} Enzyme{'s' if enz_count != '1' else ''})"
     return group_label
 
-def map_group_detail(file):
+def map_group_detail(group_name):
     detail_mapping = {
         "Group 1": "Exact Match",
         "Group 2": "Shorter Match",
@@ -109,10 +110,13 @@ def map_group_detail(file):
     }
     return detail_mapping.get(group_name, "")
 
-def load_prep_data(file):
+def load_prep_data(df):
     if df is None or df.empty or 'nPepSeq' not in df.columns or 'Bioactivity' not in df.columns:
             return None, 0, "0"
     df = df.copy()
+    if 'nPepSeq' not in df.columns or 'Bioactivity' not in df.columns:
+        return None, 0, "0"
+    
     df['Raw_bioactiity'] = df['Bioactivity']
     df['Bioactivity'] = df['Bioactivity'].apply(format_bioac_name)
     

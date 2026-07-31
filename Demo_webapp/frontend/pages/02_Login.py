@@ -22,8 +22,8 @@ with st.form("login_form"):
     submitted_login = st.form_submit_button("Login", type="primary")
 
     if submitted_login:
-        username_input = st.session_state['login_username']
-        password_input = st.session_state['login_password']
+        username_input = st.session_state,login_username.strip()
+        password_input = st.session_state.login_password
 
         if not username_input or password_input:
             st.error('Please Enter Both Username and Password.')
@@ -45,6 +45,7 @@ with st.form("login_form"):
                         st.success('Login Successful Redirecting...')
                         time.sleep(1)
                         st.switch_page('pages/01_Home.py')
+                        
                     elif response.status_code in [401,403]:
                         st.error('Incorrect username or password')
                     else:
