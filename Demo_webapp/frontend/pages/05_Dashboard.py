@@ -297,7 +297,7 @@ def build_summary_rows(group_dfs):
     summary_data = {
         'Organism': st.session_state.get('api_payload',{}).get('organism','N/A'),
         'Clevage Enzyme': st.session_state.get('api_payload',{}).get('clevage_enz','-'),
-        'Missed Cleavages': st.session_state.get('api_payload',{}).get('miss_cle','-'),
+        'Missed Cleavages': st.session_state.get('api_payload',{}).get('miss_clevages','-'),
     }
 
     for group_name, df in group_dfs.items():
