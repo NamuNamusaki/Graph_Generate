@@ -24,7 +24,11 @@ if 'noti_email' not in st.session_state:
 if 'processing_complete' not in st.session_state:
     st.session_state['processing_complete'] = False
 if 'list_step_total' not in st.session_state:
-    st.session_state['list_stepm_total'] = []
+    st.session_state['list_step_total'] = [] # Corrected typo from 'list_stepm_total'
+if 'step_elapsed' not in st.session_state:
+    st.session_state['step_elapsed'] = []
+if 'start_time' not in st.session_state:
+    st.session_state['start_time'] = 0.0
 
 
 job_uuid = st.session_state['job_id']
@@ -53,7 +57,7 @@ def status_badge(label: str,kind:str) ->str:
         'failed' : ("#dc3545", "#ffffff")
     }
     kind_key = kind.lower().strip()
-    bg,fg = colors.get(kind_key, colors['pending'])
+    bg,fg = colors.get(kind_key, colors['queue'])
     return (
         f'<span style="background:{bg}; color:{fg}; padding: 4px 12px;'
         f'border-radius:14px; font-size:0.85rem; font-weight:600; '
@@ -63,6 +67,10 @@ def status_badge(label: str,kind:str) ->str:
 def render_job_status_table(step_current:int,list_step_total:list) -> str:
     rows_html = ""
     for i,step in enumerate(list_step_total):
+        # Ensure step_elapsed is initialized and has enough elements
+        if 'step_elapsed' not in st.session_state or len(st.session_state['step_elapsed']) != len(list_step_total):
+            st.session_state['step_elapsed'] = [0.0] * len(list_step_total)
+
         elapsed = st.session_state['step_elapsed'][i]
         if i < step_current:
             status_html =status_badge('Completed','completed')
@@ -70,8 +78,8 @@ def render_job_status_table(step_current:int,list_step_total:list) -> str:
         elif i == step_current:
             status_html = status_badge('Running','running')
             time_text = format_hms(elapsed)
-        else:
-            status_html = status_badge('Pending','pending')
+        else: # i > step_current (queued steps)
+            status_html = status_badge('Queue','queue')
             time_text = '-'
         rows_html += f'''
         <tr style="border-top:1px solid #e5e7eb;">
@@ -160,7 +168,7 @@ if st.session_state['waiting_step'] == 1:
                         'job_uuid': job_uuid,
                         'email': email.strip()
                     }
-                    email_api_url = "http://127.0.0.1:8000/api/notify"
+                    email_api_url = "http://127.0.0.1:8000/api/notifications/subscribe"
                     email_response = requests.post(email_api_url, json=email_payload)
                     if email_response.status_code == 200:
                         st.session_state['noti_email'] = email.strip()
@@ -204,10 +212,15 @@ elif st.session_state['waiting_step'] == 2:
                 current_step = data.get('status','UNKNOWN').upper()
                 step_current = data.get('step_current',0)
                 api_steps = data.get('list_step_total',[])
-                # Update frontend Time
+                
                 if not st.session_state['list_step_total'] and api_steps :
                     st.session_state['list_step_total'] = api_steps
+                    # Initialize step_elapsed when list_step_total is first populated
+                    st.session_state['step_elapsed'] = [0.0] * len(api_steps)
+                    st.session_state['start_time'] = time.time() # Initialize start time
+
                 total_steps = len(st.session_state['list_step_total'])
+
 
                 if total_steps > 0:
                     if current_step == 'COMPLETED':
@@ -217,6 +230,9 @@ elif st.session_state['waiting_step'] == 2:
                 else:
                     pct = 0
 
+                # Update elapsed time for the current step if it's still processing
+                if step_current < total_steps: # Use step_current directly as it's the index of the running step
+                    st.session_state['step_elapsed'][step_current] += 3 # Add the sleep duration
                 # UI Updates
                 progress_pct_placeholder.markdown(f"### {pct}%")
                 progress_bar_placeholder.progress(pct)

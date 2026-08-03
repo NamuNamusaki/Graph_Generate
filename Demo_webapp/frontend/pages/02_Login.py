@@ -15,23 +15,20 @@ if 'access_token' not in st.session_state:
 st.title('User Login')
 st.markdown("Please Enter your Username and Password to Using this tool")
 
+# LOGIN FORM & API AUTHENTICATION
 with st.form("login_form"):
-    st.text_input("Username",key='login_username')
-    st.text_input("Password", type="password", key='login_password')
+    username_input = st.text_input("Username",key='login_username')
+    password_input = st.text_input("Password", type="password", key='login_password')
 
     submitted_login = st.form_submit_button("Login", type="primary")
-
     if submitted_login:
-        username_input = st.session_state,login_username.strip()
-        password_input = st.session_state.login_password
-
-        if not username_input or password_input:
+        if not username_input.strip() or not password_input:
             st.error('Please Enter Both Username and Password.')
         else:
             with st.spinner('Authenticating...'):
                 try:
                     api_url = "http://127.0.0.1:8000/api/login"
-                    login_payload = {"username": username_input, "password": password_input}
+                    login_payload = {"username": username_input.strip(), "password": password_input}
 
                     response = requests.post(api_url, json=login_payload)
 
@@ -39,11 +36,10 @@ with st.form("login_form"):
                         data = response.json()
                         # Save credentials and token to session state
                         st.session_state['logged_in'] = True
-                        st.session_state['username'] = username_input
+                        st.session_state['username'] = username_input.strip()
                         # Save the JWT Token so other pages can use it in their headers!
                         st.session_state['access_token'] = data.get('access_token')
                         st.success('Login Successful Redirecting...')
-                        time.sleep(1)
                         st.switch_page('pages/01_Home.py')
                         
                     elif response.status_code in [401,403]:

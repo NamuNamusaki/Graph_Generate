@@ -3,7 +3,8 @@ import pandas as pd
 import json
 import requests
 import re
-import datetime
+from datetime import datetime
+import os
 
 st.set_page_config(page_title="Upload Sample", layout="centered")
 
@@ -32,13 +33,16 @@ def process_fasta_txt(raw_text:str) -> str:
 def load_bioactivity_map():
     """Reads the CSV and creates a Dictionary mapping Names to IDs."""
     try:
-        df = pd.read_csv('bioactivities.csv')
-        formatted_name = df['bioactivity_name'].apply(format_bioac_name)
-        df['bioactivity_name'] = formatted_name
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        root_dir = os.path.dirname(current_dir)
+        csv_path = os.path.join(root_dir, 'bioactivity.csv')
+        df = pd.read_csv(csv_path)
+        formatted_name = df['Bioactivity'].apply(format_bioac_name)
+        df['Bioactivity'] = formatted_name
         # Creates a dictionary: {"ACE Inhibitory": 1, "Antioxidant": 2, ...}
-        return dict(zip(df['bioactivity_name'], df['bioactivity_id']))
+        return dict(zip(df['Bioactivity'], df['id']))
     except FileNotFoundError:
-        st.error("⚠️ Database file 'bioactivities.csv' is missing! Please ensure it exists in the root directory.")
+        st.error("⚠️ Database file 'bioactivity.csv' is missing! Please ensure it exists in the root directory.")
         return {}
 
 
@@ -152,7 +156,7 @@ if st.session_state['upload_step'] == 1:
             "sample_name": st.session_state.sample_name.strip(),
             "organism": st.session_state.organism.strip() or None,
             "description": st.session_state.description.strip() or None,
-            "list_bioactivities_id": selected_ids,
+            "list_bioactivity_id": selected_ids,
             "bioactivities_display": st.session_state.bioactivities,
             "ml_predictions": st.session_state.ml_pred,
             "clevage_enz": st.session_state.clevage_enz,
@@ -176,7 +180,7 @@ elif st.session_state['upload_step'] == 2:
         st.markdown(f'**Project Name:** {payload["project_name"]}')
         st.markdown(f'**Sample Name:** {payload["sample_name"]}')
         st.markdown(f'**Organism:** {payload["organism"]}')
-        st.markdown(f'**Bioactivities:** {", ".join(payload["bioactivities"])if payload["bioactivities"] else "-"}')
+        st.markdown(f'**Bioactivities:** {", ".join(payload["bioactivities_display"])if payload["bioactivities_display"] else "-"}')
         st.markdown(f'**ML Predictions:** {", ".join(payload["ml_predictions"])if payload["ml_predictions"] else "-"}')
         st.markdown(f'**Insilico Digestion Settings**')
         st.markdown(f'**Cleavage Enzyme:** {payload["clevage_enz"]}')
@@ -209,7 +213,7 @@ elif st.session_state['upload_step'] == 2:
                     # 3. Send Request
                     api_url = 'http://127.0.0.1:8000/api/jobs'
                     response = requests.post(api_url, json=payload,headers=headers)
-                    if response.status_code == [200, 201]:
+                    if response.status_code in [200, 201, 202]:
                         # Keep the data
                         st.session_state['job_id'] = response.json().get('job_id',job_uuid)
                         st.session_state['processing_complete'] = False
