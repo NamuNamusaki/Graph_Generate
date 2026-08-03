@@ -48,22 +48,18 @@ def fetch_summary_data(job_id):
     try:
         response = requests.get(f"{API_BASE_URL}/results/{job_id}/summary", headers=AUTH_HEADERS)
         response.raise_for_status()
-        csv_text = response.texts
+        df = pd.DataFrame(response.json())
 
-        df = pd.read_csv(io.StringIO(csv_text))
         # Convert CSV text into Pandas DataFrame for the frontend
         group_dfs = {}
         if 'Group' in df.columns:
             for group_name, group_data in df.groupby('Group'):
                 group_dfs[group_name] = group_data.drop(columns=["Group"]).reset_index(drop=True)
         return group_dfs
-    
     except requests.exceptions.RequestException as e:
         st.error(f"⚠️ Could not fetch summary data from the server. Details: {e}")
         return {}
-    except Exception as e:
-        st.error(f"⚠️ Error processing CSV data: {e}")
-        return {}
+
     
 def fetch_sequence_csv(job_id, group_name, bioactivity):
     """
@@ -230,19 +226,19 @@ def summary_dashboard(group_dfs):
             mime="application/pdf",
             use_container_width=True,
         )
-    for i, file in enumerate(group_dfs):         
+    for i, (group_name, df) in enumerate(group_dfs.items()):         
         # Create new row every 2 items
         if i % 2 == 0:
             cols = st.columns(2)
         col = cols[i % 2]
         
         # 1. Get Details from File
-        file_name = os.path.basename(file)
-        group_name = get_group_names(file_name)
+        # file_name = os.path.basename(file)
+        # group_name = get_group_names(file_name)
         group_detail = map_group_detail(group_name)
 
         # 2. Load and Process Data
-        plot_df, total_peptides, formatted_total= load_prep_data(file)
+        plot_df, total_peptides, formatted_total= load_prep_data(df)
         if plot_df is None:
             continue
         # 4. Render Dashboard Components
@@ -334,11 +330,11 @@ def generate_html_report(csv_paths):
     table_html = details_df.to_html(index=False, border=0, classes="summary-table")
 
     chart_sections = []
-    for i, file in enumerate(csv_paths):
-        file_name = os.path.basename(file)
-        group_name = get_group_names(file_name)
+    for i, (group_name, df) in enumerate(csv_paths.items()):
+        # file_name = os.path.basename(file)
+        # group_name = get_group_names(file_name)
         group_detail = map_group_detail(group_name)
-        plot_df, total_peptides, formatted_total = load_prep_data(file)
+        plot_df, total_peptides, formatted_total = load_prep_data(df)
         if plot_df is None:
             continue
 
@@ -449,11 +445,11 @@ def generate_pdf_report(csv_paths):
     story.append(summary_table)
     story.append(PageBreak())
 
-    for file in csv_paths:
-        file_name = os.path.basename(file)
-        group_name = get_group_names(file_name)
+    for group_name, df in csv_paths.items():
+        # file_name = os.path.basename(file)
+        # group_name = get_group_names(file_name)
         group_detail = map_group_detail(group_name)
-        plot_df, total_peptides, formatted_total = load_prep_data(file)
+        plot_df, total_peptides, formatted_total = load_prep_data(df)
         if plot_df is None:
             continue
 

@@ -1,10 +1,12 @@
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Query
 from pydantic import BaseModel
 from typing import Any, Dict, Optional
 import uvicorn
 import time
 import io
 from fastapi.responses import Response
+import random
+import pandas as pd
 
 app = FastAPI()
 
@@ -93,20 +95,34 @@ def get_status(job_id: str):
 @app.get("/api/results/{job_id}/summary")
 def get_results_summary(job_id: str):
     # Returns dummy data formatted exactly how your dashboard expects it
-    csv_content = (
-        'Group,Bioactivity,Count\n'
-        'Group 1,ACE Inhibitory,450\n'
-        'Group 1,Antioxidant,120\n'
-        'Group 1,Antimicrobial,85\n'
-        'Group 2,ACE Inhibitory,200\n'
-        'Group 2,Anti-inflammatory,90\n'
-        'Group 2,Antioxidant,60\n'
-        'Group 3a,Antimicrobial,150\n'
-        'Group 3a,Antioxidant,75\n'
-        'Group 3b,ACE Inhibitory,300\n'\
-        'Group 3b,Antioxidant,100\n'
-    )
-    return Response(content=csv_content, media_type="text/csv")
+    data =[]
+    groups = ["Group 1", "Group 2", "Group 3a", "Group 3b"]
+    bioactivities = ["ACE Inhibitory", "Antimicrobial", "Anti-inflammatory", 
+                     "DPP-IV Inhibitory", "Anticancer","Antihypertensive", 
+                     "Immunomodulatory", "Antidiabetic","Neuroprotective", "Antiviral"]
+    for group in groups:
+        selected_bioactivity = random.sample(bioactivities, k=random.randint(5, 10))  # Randomly select 3 bioactivities for each group
+        for i in selected_bioactivity:
+            data.append({"Group": group, "Bioactivity": i, "nPepSeq": 100})
+    df = pd.DataFrame(data)            
+    return df.to_dict(orient="records")
+
+@app.get("/api/results/{job_id}/download")
+def get_sequence_download(job_id: str, group: str = Query(...), bioactivity: str = Query(...)):
+    """
+    Returns specific peptide sequences and scores for a given group and bioactivity.
+    """
+    # Generate mock sequence rows
+    data = [
+        {
+            "Sequence": "".join(random.choices("ACDEFGHIKLMNPQRSTVWY", k=random.randint(5, 15))),
+            "Score": round(random.uniform(0.60, 0.99), 4)
+        }
+        for _ in range(random.randint(5, 25))
+    ]
+    
+    df = pd.DataFrame(data)
+    return df.to_dict(orient="records")
 
 @app.get("/api/results/{job_id}/download")
 def download_csv(job_id: str, group: str, bioactivity: str):
