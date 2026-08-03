@@ -47,7 +47,7 @@ def submit_analysis(payload: AnalyzePayload, authorization: Optional[str] = Head
     
     # Register the new job in our mock database starting at step 0
     mock_jobs_db[payload.job_uuid] = {
-        "status": "PROCESSING",
+        "status": "running",
         "step_current": 0
     }
     return {"job_id": payload.job_uuid, "message": "Job started"}
@@ -84,7 +84,7 @@ def get_status(job_id: str):
     return {
         "status": job["status"],
         "step_current": job["step_current"],
-        "step_total_list": PIPELINE_STEPS
+        "list_step_total": PIPELINE_STEPS
     }
 
 # -----------------------------------------------------------------------------------------
@@ -93,17 +93,20 @@ def get_status(job_id: str):
 @app.get("/api/results/{job_id}/summary")
 def get_results_summary(job_id: str):
     # Returns dummy data formatted exactly how your dashboard expects it
-    return {
-        "Group 1": [
-            {"Bioactivity": "ACE Inhibitory", "nPepSeq": 450},
-            {"Bioactivity": "Antioxidant", "nPepSeq": 120},
-            {"Bioactivity": "Antimicrobial", "nPepSeq": 85}
-        ],
-        "Group 2": [
-            {"Bioactivity": "ACE Inhibitory", "nPepSeq": 200},
-            {"Bioactivity": "Anti-inflammatory", "nPepSeq": 90}
-        ]
-    }
+    csv_content = (
+        'Group,Bioactivity,Count\n'
+        'Group 1,ACE Inhibitory,450\n'
+        'Group 1,Antioxidant,120\n'
+        'Group 1,Antimicrobial,85\n'
+        'Group 2,ACE Inhibitory,200\n'
+        'Group 2,Anti-inflammatory,90\n'
+        'Group 2,Antioxidant,60\n'
+        'Group 3a,Antimicrobial,150\n'
+        'Group 3a,Antioxidant,75\n'
+        'Group 3b,ACE Inhibitory,300\n'\
+        'Group 3b,Antioxidant,100\n'
+    )
+    return Response(content=csv_content, media_type="text/csv")
 
 @app.get("/api/results/{job_id}/download")
 def download_csv(job_id: str, group: str, bioactivity: str):

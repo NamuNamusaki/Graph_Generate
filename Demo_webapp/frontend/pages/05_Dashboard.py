@@ -46,24 +46,28 @@ AUTH_HEADERS = {"Authorization": f"Bearer {st.session_state.get('access_token', 
 @st.cache_data(show_spinner="Fetching data from server...")
 def fetch_summary_data(job_id):
     try:
-        response = requests.get(f"{API_BASE_URL}/results/{job_id}/summary")
+        response = requests.get(f"{API_BASE_URL}/results/{job_id}/summary", headers=AUTH_HEADERS)
         response.raise_for_status()
-        json_data = response.json()
-        
-        # Convert JSON arrays back into Pandas DataFrames for the frontend
+        csv_text = response.texts
+
+        df = pd.read_csv(io.StringIO(csv_text))
+        # Convert CSV text into Pandas DataFrame for the frontend
         group_dfs = {}
-        for group_name, data_list in json_data.items():
-            if data_list:
-                group_dfs[group_name] = pd.DataFrame(data_list)
+        if 'Group' in df.columns:
+            for group_name, group_data in df.groupby('Group'):
+                group_dfs[group_name] = group_data.drop(columns=["Group"]).reset_index(drop=True)
         return group_dfs
     
     except requests.exceptions.RequestException as e:
         st.error(f"⚠️ Could not fetch summary data from the server. Details: {e}")
         return {}
+    except Exception as e:
+        st.error(f"⚠️ Error processing CSV data: {e}")
+        return {}
     
 def fetch_sequence_csv(job_id, group_name, bioactivity):
     """
-    Coworker Handoff Note:
+    Handoff Note:
     Endpoint: GET /api/results/{job_id}/download?group={group_name}&bioactivity={bioactivity}
     Expected Response: Plain text CSV string.
     """
@@ -199,7 +203,7 @@ def plot_pie(filtered_df,formatted_total):
                         ))
     return fig_pie,pie_rest
 
-# Summary tab content
+#=============== Summary tab content=============================
 def summary_dashboard(group_dfs):
     """
     Iterates through a list of CSV files, opens EVERY file, 
@@ -628,20 +632,22 @@ def get_stat_file():
 
 # Tab Name Define
 st.title("Peptide Sequence Bioactivity Dashboard")
+st.markdown(f"**Job ID:** `{job_uuid}`")
+grouped_data = fetch_summary_data(job_uuid)
+
 tab_titles = ["Summary", "Group 1", "Group 2", "Group 3a", "Group 3b", "ML Prediction"]
 tabs = st.tabs(tab_titles)
 
-csv_files = get_stat_file()
 # Route to appropriate render function based on selected tab
 with tabs[0]:
-    summary_dashboard(csv_files)
+    summary_dashboard(grouped_data)
 with tabs[1]:
-    render_group_tab("Group 1", csv_files)
+    render_group_tab("Group 1", grouped_data)
 with tabs[2]:
-    render_group_tab("Group 2", csv_files)
+    render_group_tab("Group 2", grouped_data)
 with tabs[3]:
-    render_group_tab("Group 3a", csv_files)
+    render_group_tab("Group 3a", grouped_data)
 with tabs[4]:
-    render_group_tab("Group 3b", csv_files)
+    render_group_tab("Group 3b", grouped_data)
 with tabs[5]:
     render_ml_tab()

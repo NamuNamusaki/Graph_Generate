@@ -31,8 +31,8 @@ if 'start_time' not in st.session_state:
     st.session_state['start_time'] = 0.0
 
 
-job_uuid = st.session_state['job_id']
-api_url = f"http://127.0.0.1:8000/api/status/{job_uuid}"
+job_id = st.session_state['job_id']
+api_url = f"http://127.0.0.1:8000/api/status/{job_id}"
 auth_headers = {"Authorization": f"Bearer {st.session_state.get('access_token', '')}"}
 
 # Helper Function ============================
@@ -83,7 +83,7 @@ def render_job_status_table(step_current:int,list_step_total:list) -> str:
             time_text = '-'
         rows_html += f'''
         <tr style="border-top:1px solid #e5e7eb;">
-            <td style="padding:10px 14px;">{i + 1} · {step['name']}</td>
+            <td style="padding:10px 14px;">{i + 1} · {step}</td>
             <td>{status_html}</td>
             <td>{time_text}</td></tr>'''
     return f"""
@@ -165,7 +165,7 @@ if st.session_state['waiting_step'] == 1:
             with st.spinner('Sending notification...'):
                 try :
                     email_payload = {
-                        'job_uuid': job_uuid,
+                        'job_uuid': job_id,
                         'email': email.strip()
                     }
                     email_api_url = "http://127.0.0.1:8000/api/notifications/subscribe"
@@ -185,7 +185,7 @@ if st.session_state['waiting_step'] == 1:
 # ===== Step2 : Job Progress tracker(API Polling)======
 elif st.session_state['waiting_step'] == 2:
     st.title('Job Status')
-    st.markdown(f'**Job ID:** `{job_uuid}`')
+    st.markdown(f'**Job ID:** `{job_id}`')
 
     header_left, header_right = st.columns([3,2])
     status_placeholder = header_left.empty()
@@ -209,7 +209,7 @@ elif st.session_state['waiting_step'] == 2:
                 response.raise_for_status()
                 data = response.json()
 
-                current_step = data.get('status','UNKNOWN').upper()
+                current_status = data.get('status','UNKNOWN').upper()
                 step_current = data.get('step_current',0)
                 api_steps = data.get('list_step_total',[])
                 
@@ -223,7 +223,7 @@ elif st.session_state['waiting_step'] == 2:
 
 
                 if total_steps > 0:
-                    if current_step == 'COMPLETED':
+                    if current_status == 'COMPLETED':
                         pct = 100
                     else :
                         pct = int((step_current / total_steps)*100)
@@ -239,10 +239,10 @@ elif st.session_state['waiting_step'] == 2:
                 table_placeholder.markdown(
                     render_job_status_table(step_current,st.session_state['list_step_total']), unsafe_allow_html=True
                 )
-                if current_step == 'COMPLETED':
+                if current_status == 'COMPLETED' or (total_steps > 0 and step_current >= total_steps) :
                     st.session_state['processing_complete'] = True
-                    break
-                elif current_step == 'FAILED':
+                    st.rerun()  # Refresh the page to show completion
+                elif current_status == 'FAILED':
                     error_placeholder.markdown(status_badge('● Failed', 'failed'), unsafe_allow_html=True)
                     error_msg = data.get("message", "An unknown error occurred on the server.")
                     error_placeholder.error(f"❌ **Analysis Failed:** {error_msg}")
