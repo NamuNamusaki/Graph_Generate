@@ -17,6 +17,7 @@ from reportlab.lib.units import cm
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image as RLImage, Table, TableStyle, PageBreak
+from config import API_URL
 
 st.set_page_config(page_title="Result Dashboard", layout="centered")
 
@@ -39,14 +40,13 @@ if 'job_id' not in st.session_state:
     st.stop()
 
 job_uuid = st.session_state['job_id']
-API_BASE_URL = "http://127.0.0.1:8000/api" # NEED CHANGE!
 AUTH_HEADERS = {"Authorization": f"Bearer {st.session_state.get('access_token', '')}"}
 
 #API FETCHING FUNCTIONS
 @st.cache_data(show_spinner="Fetching data from server...")
 def fetch_summary_data(job_id):
     try:
-        response = requests.get(f"{API_BASE_URL}/results/{job_id}/summary", headers=AUTH_HEADERS)
+        response = requests.get(f"{API_URL}/results/{job_id}/summary", headers=AUTH_HEADERS)
         response.raise_for_status()
         df = pd.DataFrame(response.json())
 
@@ -69,7 +69,7 @@ def fetch_sequence_csv(job_id, group_name, bioactivity):
     """
     try:
         # Safe URL formatting
-        url = f"{API_BASE_URL}/results/{job_id}/download"
+        url = f"{API_URL}/results/{job_id}/download"
         params = {"group": group_name, "bioactivity": bioactivity}
         response = requests.get(url, params=params)
         
