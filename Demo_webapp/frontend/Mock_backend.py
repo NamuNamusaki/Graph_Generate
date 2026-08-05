@@ -58,7 +58,7 @@ class EmailPayload(BaseModel):
     job_uuid: str
     email: str
 
-@app.post("/api/notifications/subscribe")
+@app.post("/api/notifications")
 def subscribe_email(payload: EmailPayload):
     return {"message": f"Subscribed {payload.email} successfully!"}
 
@@ -105,9 +105,10 @@ def get_results_summary(job_id: str):
     return df.to_dict(orient="records")
 
 @app.get("/api/results/{job_id}/download")
-def get_sequence_download(job_id: str, group: str = Query(...), bioactivity: str = Query(...)):
+def download_sequence_csv(job_id: str, group: str = Query(...), bioactivity: str = Query(...)):
     """
-    Returns specific peptide sequences and scores for a given group and bioactivity.
+    Returns specific peptide sequences and scores for a given group and bioactivity
+    as a downloadable CSV file (matches what 05_Dashboard.py's fetch_sequence_csv expects).
     """
     # Generate mock sequence rows
     data = [
@@ -117,13 +118,9 @@ def get_sequence_download(job_id: str, group: str = Query(...), bioactivity: str
         }
         for _ in range(random.randint(5, 25))
     ]
-    
-    df = pd.DataFrame(data)
-    return df.to_dict(orient="records")
 
-@app.get("/api/results/{job_id}/download")
-def download_csv(job_id: str, group: str, bioactivity: str):
-    csv_content = f"Sequence,Score\nPEPTIDE1,0.99\nPEPTIDE2,0.85\nMock Data for {bioactivity},1.0"
+    df = pd.DataFrame(data)
+    csv_content = df.to_csv(index=False)
     return Response(content=csv_content, media_type="text/csv")
 
 if __name__ == "__main__":
