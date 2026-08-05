@@ -31,7 +31,7 @@ def login(payload: LoginPayload):
     raise HTTPException(status_code=401, detail="Invalid credentials")
 
 # -----------------------------------------------------------------------------------------
-# 2. MOCK UPLOAD & SUBMISSION (03_Upload.py)
+# 2. MOCK UPLOAD & SUBMISSION (03_Data_prep.py)
 # -----------------------------------------------------------------------------------------
 class AnalyzePayload(BaseModel):
     job_uuid: str
@@ -55,7 +55,7 @@ def submit_analysis(payload: AnalyzePayload, authorization: Optional[str] = Head
     return {"job_id": payload.job_uuid, "message": "Job started"}
 
 # -----------------------------------------------------------------------------------------
-# 3. MOCK EMAIL NOTIFICATION (04_Waiting.py)
+# 3. MOCK EMAIL NOTIFICATION (04_Job_status.py)
 # -----------------------------------------------------------------------------------------
 class EmailPayload(BaseModel):
     job_uuid: str
@@ -66,7 +66,7 @@ def subscribe_email(payload: EmailPayload):
     return {"message": f"Subscribed {payload.email} successfully!"}
 
 # -----------------------------------------------------------------------------------------
-# 4. MOCK STATUS POLLING (04_Waiting.py)
+# 4. MOCK STATUS POLLING (04_Job_status.py)
 # -----------------------------------------------------------------------------------------
 @app.get("/api/status/{job_id}")
 def get_status(job_id: str):

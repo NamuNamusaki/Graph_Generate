@@ -2,6 +2,7 @@ import streamlit as st
 import time
 import re
 import requests
+from config import API_URL
 
 st.set_page_config(page_title="Job Status", layout="centered")
 
@@ -32,7 +33,7 @@ if 'start_time' not in st.session_state:
 
 
 job_id = st.session_state['job_id']
-api_url = f"http://127.0.0.1:8000/api/status/{job_id}"
+api_url = f"{API_URL}/status/{job_id}"
 auth_headers = {"Authorization": f"Bearer {st.session_state.get('access_token', '')}"}
 
 # Helper Function ============================
@@ -168,7 +169,7 @@ if st.session_state['waiting_step'] == 1:
                         'job_uuid': job_id,
                         'email': email.strip()
                     }
-                    email_api_url = "http://127.0.0.1:8000/api/notifications/subscribe"
+                    email_api_url = f"{API_URL}/notifications/subscribe"
                     email_response = requests.post(email_api_url, json=email_payload)
                     if email_response.status_code == 200:
                         st.session_state['noti_email'] = email.strip()
