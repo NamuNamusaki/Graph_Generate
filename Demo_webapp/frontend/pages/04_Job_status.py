@@ -167,7 +167,7 @@ if st.session_state['waiting_step'] == 1:
                         'job_uuid': job_id,
                         'email': email.strip()
                     }
-                    email_api_url = f"{API_URL}/notifications/subscribe"
+                    email_api_url = f"{API_URL}/notifications"
                     email_response = requests.post(email_api_url, json=email_payload)
                     if email_response.status_code == 200:
                         st.session_state['noti_email'] = email.strip()
