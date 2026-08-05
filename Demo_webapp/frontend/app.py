@@ -9,8 +9,8 @@ if 'username' not in st.session_state:
 
 home_page = st.Page('pages/01_Home.py',title='Home')
 login_page = st.Page('pages/02_Login.py',title='Login')
-upload_page = st.Page('pages/03_Upload.py',title='Upload')
-waiting_page = st.Page('pages/04_Waiting.py',title='Jobstatus')
+upload_page = st.Page('pages/03_Data_prep.py',title='Upload')
+waiting_page = st.Page('pages/04_Job_status.py',title='Jobstatus')
 dashboard_page = st.Page('pages/05_Dashboard.py',title='Result Dashboard')
 
 if st.session_state['logged_in']:
