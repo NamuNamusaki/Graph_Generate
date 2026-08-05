@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Header, HTTPException, Query
+from fastapi import FastAPI, Form, Header, HTTPException, Query
 from pydantic import BaseModel
 from typing import Any, Dict, Optional
 import uvicorn
@@ -20,13 +20,10 @@ PIPELINE_STEPS = ["Reading Data", "In silico Digestion", "Bioactivity Matching",
 # -----------------------------------------------------------------------------------------
 # 1. MOCK LOGIN (02_Login.py)
 # -----------------------------------------------------------------------------------------
-class LoginPayload(BaseModel):
-    username: str
-    password: str
-
+# 02_Login.py posts `data={...}` (form-encoded), so this reads form fields, not a JSON body.
 @app.post("/api/login")
-def login(payload: LoginPayload):
-    if payload.username == "admin" and payload.password == "password":
+def login(username: str = Form(...), password: str = Form(...)):
+    if username == "admin" and password == "password":
         return {"access_token": "fake_mock_jwt_token_12345"}
     raise HTTPException(status_code=401, detail="Invalid credentials")
 

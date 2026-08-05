@@ -18,6 +18,7 @@ from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image as RLImage, Table, TableStyle, PageBreak
 from config import API_URL
+from auth import require_login, get_auth_headers
 
 st.set_page_config(page_title="Result Dashboard", layout="centered")
 
@@ -31,16 +32,13 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Security Check + Data Check
-if not st.session_state.get("logged_in", False):
-    st.warning("⚠️ You must be logged in to view results.")
-    st.stop()
+require_login()
 if 'job_id' not in st.session_state:
     st.warning("⚠️ No data found. Please go back to the Upload page and submit a sequence.")
     st.stop()
 
 job_uuid = st.session_state['job_id']
-AUTH_HEADERS = {"Authorization": f"Bearer {st.session_state.get('access_token', '')}"}
+AUTH_HEADERS = get_auth_headers()
 
 #API FETCHING FUNCTIONS
 @st.cache_data(show_spinner="Fetching data from server...")

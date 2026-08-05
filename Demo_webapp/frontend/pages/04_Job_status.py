@@ -3,13 +3,11 @@ import time
 import re
 import requests
 from config import API_URL
+from auth import require_login, get_auth_headers
 
 st.set_page_config(page_title="Job Status", layout="centered")
 
-# SECURITY CHECKS
-if not st.session_state.get('logged_in', False):
-    st.warning("⚠️ Please log in to view this page.")
-    st.stop()
+require_login()
 
 if 'job_id' not in st.session_state:
     st.error("⚠️ No active analysis job found in memory.")
@@ -34,7 +32,7 @@ if 'start_time' not in st.session_state:
 
 job_id = st.session_state['job_id']
 api_url = f"{API_URL}/status/{job_id}"
-auth_headers = {"Authorization": f"Bearer {st.session_state.get('access_token', '')}"}
+auth_headers = get_auth_headers()
 
 # Helper Function ============================
 Email_patern = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -206,7 +204,7 @@ elif st.session_state['waiting_step'] == 2:
         # API Polling Loop        
         while True:
             try:
-                response = requests.get(api_url)
+                response = requests.get(api_url, headers=auth_headers)
                 response.raise_for_status()
                 data = response.json()
 

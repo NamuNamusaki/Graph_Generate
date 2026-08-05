@@ -6,14 +6,11 @@ import re
 from datetime import datetime
 import os
 from config import API_URL
+from auth import require_login, get_auth_headers
 
 st.set_page_config(page_title="Upload Sample", layout="centered")
 
-# Re direct to login if not logged in =========================================
-if not st.session_state.get('logged_in',False):
-    st.warning('Please log in to view this page.')
-    st.switch_page('pages/02_Login.py')
-    st.stop()
+require_login()
 
 
 # Helper function
@@ -210,9 +207,7 @@ elif st.session_state['upload_step'] == 2:
                 payload['job_uuid'] = job_uuid
 
                 # 2. Attach JWT security token
-                headers = {
-                    "Authorization": f"Bearer {st.session_state.get('access_token', '')}"
-                }
+                headers = get_auth_headers()
                 # 3. Send Request
                 api_url = f'{API_URL}/jobs'
                 response = requests.post(api_url, json=payload,headers=headers)
