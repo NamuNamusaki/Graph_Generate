@@ -2,3 +2,14 @@
 .claude/skills/developing-with-streamlit
 CLAUDE.md
 Demo_webapp/frontend/.claude/launch.json
+Demo_webapp/frontend/_test_multiproject.py
+Demo_webapp/frontend/__pycache__/state.cpython-310.pyc
+Demo_webapp/HTTP Request & API payload.docx
+Demo_webapp/frontend/state.py
+Demo_webapp/frontend/pages/__pycache__/05_Dashboard.cpython-310.pyc
+Demo_webapp/frontend/__pycache__/auth.cpython-310.pyc
+Demo_webapp/frontend/__pycache__/config.cpython-310.pyc
+Demo_webapp/frontend/__pycache__/Mock_backend.cpython-310.pyc
+Demo_webapp/frontend/__pycache__/Mock_backend.cpython-310.pyc
+Demo_webapp/frontend/__pycache__/Mock_backend.cpython-311.pyc
+__pycache__/
