@@ -4,81 +4,66 @@ import re
 import requests
 from config import API_URL
 from auth import require_login, get_auth_headers
+from state import ensure_projects_store, get_active_project, project_switcher
 
 st.set_page_config(page_title="Job Status", layout="centered")
 
 require_login()
+ensure_projects_store()
 
-if 'job_id' not in st.session_state:
+job_id, project = get_active_project()
+if job_id is None:
     st.error("⚠️ No active analysis job found in memory.")
     st.info("Please return to the Upload page to submit a new sequence.")
     if st.button("Go to Upload Page", type="primary"):
-        st.switch_page("pages/03_Upload.py")
+        st.switch_page("pages/03_Data_prep.py")
     st.stop()
-# Initialize session state variables safely    
-if 'waiting_step' not in st.session_state:
-    st.session_state['waiting_step'] = 1
-if 'noti_email' not in st.session_state:
-    st.session_state['noti_email'] = ''
-if 'processing_complete' not in st.session_state:
-    st.session_state['processing_complete'] = False
-if 'list_step_total' not in st.session_state:
-    st.session_state['list_step_total'] = [] # Corrected typo from 'list_stepm_total'
-if 'step_elapsed' not in st.session_state:
-    st.session_state['step_elapsed'] = []
-if 'start_time' not in st.session_state:
-    st.session_state['start_time'] = 0.0
 
-
-job_id = st.session_state['job_id']
-api_url = f"{API_URL}/status/{job_id}"
-auth_headers = get_auth_headers()
+# Lets the user flip between concurrently submitted projects (renders
+# nothing if there's only one project in this session).
+project_switcher("Viewing project")
 
 # Helper Function ============================
 Email_patern = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
-def validate_email(value:str) -> bool:
+def validate_email(value: str) -> bool:
     return bool(value) and bool(Email_patern.match(value.strip()))
 
 # To format the time from second to minute
-def format_hms(second:int) -> str:
+def format_hms(second: int) -> str:
     second = int(second)
     hours, remainder = divmod(second, 3600)
     minutes, seconds = divmod(remainder, 60)
     return f'{hours}:{minutes:02d}:{seconds:02d}'
 
 # Job status
-def status_badge(label: str,kind:str) ->str:
-    colors ={
+def status_badge(label: str, kind: str) -> str:
+    colors = {
         'completed': ("#8DB080", "#ffffff"),
         'running': ("#6b95ea", "#ffffff"),
-        'queue' : ("#e9ecef", "#6c757d"),
-        'failed' : ("#dc3545", "#ffffff")
+        'queue': ("#e9ecef", "#6c757d"),
+        'failed': ("#dc3545", "#ffffff")
     }
     kind_key = kind.lower().strip()
-    bg,fg = colors.get(kind_key, colors['queue'])
+    bg, fg = colors.get(kind_key, colors['queue'])
     return (
         f'<span style="background:{bg}; color:{fg}; padding: 4px 12px;'
         f'border-radius:14px; font-size:0.85rem; font-weight:600; '
         f'display:inline-block;">{label}</span>'
     )
 
-def render_job_status_table(step_current:int,list_step_total:list) -> str:
+def render_job_status_table(step_current: int, list_step_total: list, step_elapsed: list) -> str:
     rows_html = ""
-    for i,step in enumerate(list_step_total):
-        # Ensure step_elapsed is initialized and has enough elements
-        if 'step_elapsed' not in st.session_state or len(st.session_state['step_elapsed']) != len(list_step_total):
-            st.session_state['step_elapsed'] = [0.0] * len(list_step_total)
-
-        elapsed = st.session_state['step_elapsed'][i]
+    for i, step in enumerate(list_step_total):
+        elapsed = step_elapsed[i] if i < len(step_elapsed) else 0.0
         if i < step_current:
-            status_html =status_badge('Completed','completed')
+            status_html = status_badge('Completed', 'completed')
             time_text = format_hms(elapsed)
         elif i == step_current:
-            status_html = status_badge('Running','running')
+            status_html = status_badge('Running', 'running')
             time_text = format_hms(elapsed)
-        else: # i > step_current (queued steps)
-            status_html = status_badge('Queue','queue')
+        else:  # i > step_current (queued steps)
+            status_html = status_badge('Queue', 'queue')
             time_text = '-'
         rows_html += f'''
         <tr style="border-top:1px solid #e5e7eb;">
@@ -103,7 +88,7 @@ def render_job_status_table(step_current:int,list_step_total:list) -> str:
 #=== Step 1 : Email Notification=====================
 # Create a routing for waiting page
 # the first page is for confirm data uploaded succession the second page is the job status
-if st.session_state['waiting_step'] == 1:
+if project['waiting_step'] == 1:
     # upload success -> confirm text +email input
     with st.container(border=True):
         st.markdown(
@@ -124,22 +109,23 @@ if st.session_state['waiting_step'] == 1:
             </div>
             ''', unsafe_allow_html=True,
         )
-    
+
     with st.container(border=True):
-        col1,col2 = st.columns([1,6])
+        col1, col2 = st.columns([1, 6])
         with col1:
             st.markdown(
                 '<div style="width:48px; height:48px; background:#ced4da; border-radius:8px; display:flex; align-items:center; '
                 'justify-content:center; font-size:1.4rem;">✉️</div>'
-                ,unsafe_allow_html=True
+                , unsafe_allow_html=True
             )
         with col2:
             st.caption('Notification Email')
-            email =st.text_input(
+            email = st.text_input(
                 'Notification Email',
-                value  = st.session_state['noti_email'],
+                value=project['noti_email'],
                 placeholder='research@university.ac.th',
-                label_visibility='collapsed')
+                label_visibility='collapsed',
+                key=f'noti_email_input_{job_id}')
 
     st.markdown(
             """
@@ -151,118 +137,137 @@ if st.session_state['waiting_step'] == 1:
             unsafe_allow_html=True,
         )
 
-    process_col,home_col = st.columns(2)
+    process_col, home_col = st.columns(2)
     with process_col:
-        process_clicked = st.button('Track Your Job Status',type='primary',use_container_width=True)
+        process_clicked = st.button('Track Your Job Status', type='primary', use_container_width=True, key=f'track_{job_id}')
     with home_col:
-        back_home_clicked = st.button('Back to Home',type='primary',use_container_width=True)
+        back_home_clicked = st.button('Back to Home', type='primary', use_container_width=True, key=f'home_{job_id}')
 
     if process_clicked:
         if not validate_email(email):
             st.error("⚠️ Please enter a valid email address before continuing.")
         else:
             with st.spinner('Sending notification...'):
-                try :
+                try:
                     email_payload = {
-                        'job_uuid': job_id,
+                        'job_uuid': project['job_uuid'],
                         'email': email.strip()
                     }
                     email_api_url = f"{API_URL}/notifications"
-                    email_response = requests.post(email_api_url, json=email_payload)
+                    email_response = requests.post(
+                        email_api_url, json=email_payload, headers=get_auth_headers(), timeout=10
+                    )
                     if email_response.status_code == 200:
-                        st.session_state['noti_email'] = email.strip()
-                        st.session_state['waiting_step'] = 2
+                        project['noti_email'] = email.strip()
+                        project['waiting_step'] = 2
                         st.rerun()
-                    else :
+                    else:
                         st.error(f'Backend failed to register email, Error {email_response.status_code}: {email_response.text}')
+                except requests.exceptions.ConnectionError:
+                    st.error("⚠️ Cannot reach the server. Is the backend running?")
+                except requests.exceptions.Timeout:
+                    st.error("⚠️ The server took too long to respond. Please try again.")
                 except requests.exceptions.RequestException as e:
                     st.error(f'Connection Error: {e}')
-                    
-        if back_home_clicked:
-            st.switch_page('pages/01_Home.py')
 
-# ===== Step2 : Job Progress tracker(API Polling)======
-elif st.session_state['waiting_step'] == 2:
+    if back_home_clicked:
+        st.switch_page('pages/01_Home.py')
+
+# ===== Step2 : Job Progress tracker (non-blocking, auto-refreshing) ======
+elif project['waiting_step'] == 2:
     st.title('Job Status')
     st.markdown(f'**Job ID:** `{job_id}`')
 
-    header_left, header_right = st.columns([3,2])
-    status_placeholder = header_left.empty()
-    results_placeholder = header_right.empty()
+    # This used to be `while True: ...; time.sleep(3)`, which blocks the
+    # entire script — while it ran, this Streamlit session couldn't respond
+    # to ANY interaction (including the project switcher above, or a navbar
+    # click to go work on another project). st.fragment(run_every=...)
+    # reruns just this function on its own timer, so the rest of the page
+    # (and the session) stays responsive while this job polls in the background.
+    @st.fragment(run_every="3s")
+    def poll_job_status(job_id=job_id):
+        proj = st.session_state['projects'].get(job_id)
+        if proj is None:
+            return  # project was removed (e.g. from another tab/switch) — nothing to show
 
-    st.markdown('### Overall Progress')
-    progress_pct_placeholder = st.empty()
-    progress_bar_placeholder = st.empty()
-
-    st.markdown("#### Pipeline Steps")
-    table_placeholder = st.empty()
-    error_placeholder = st.empty()
-
-    if not st.session_state['processing_complete']:
-        status_placeholder.markdown(status_badge('● Running','running'),unsafe_allow_html=True)
-
-        # API Polling Loop        
-        while True:
+        if proj['processing_complete']:
+            pct = 100
+            step_current = len(proj['list_step_total'])
+            status_html = status_badge('● Completed', 'completed')
+        else:
             try:
-                response = requests.get(api_url, headers=auth_headers)
+                response = requests.get(f"{API_URL}/status/{proj['job_uuid']}", headers=get_auth_headers(), timeout=10)
                 response.raise_for_status()
                 data = response.json()
 
-                current_status = data.get('status','UNKNOWN').upper()
-                step_current = data.get('step_current',0)
-                api_steps = data.get('list_step_total',[])
-                
-                if not st.session_state['list_step_total'] and api_steps :
-                    st.session_state['list_step_total'] = api_steps
-                    # Initialize step_elapsed when list_step_total is first populated
-                    st.session_state['step_elapsed'] = [0.0] * len(api_steps)
-                    st.session_state['start_time'] = time.time() # Initialize start time
+                current_status = data.get('status', 'UNKNOWN').upper()
+                step_current = data.get('step_current', 0)
+                api_steps = data.get('list_step_total', [])
 
-                total_steps = len(st.session_state['list_step_total'])
+                if not proj['list_step_total'] and api_steps:
+                    proj['list_step_total'] = api_steps
+                    proj['step_elapsed'] = [0.0] * len(api_steps)
+                    proj['start_time'] = time.time()
 
+                total_steps = len(proj['list_step_total'])
+                if total_steps > 0 and step_current < total_steps:
+                    proj['step_elapsed'][step_current] += 3  # matches the ~3s refresh cadence
 
-                if total_steps > 0:
-                    if current_status == 'COMPLETED':
-                        pct = 100
-                    else :
-                        pct = int((step_current / total_steps)*100)
-                else:
-                    pct = 0
-
-                # Update elapsed time for the current step if it's still processing
-                if step_current < total_steps: # Use step_current directly as it's the index of the running step
-                    st.session_state['step_elapsed'][step_current] += 3 # Add the sleep duration
-                # UI Updates
-                progress_pct_placeholder.markdown(f"### {pct}%")
-                progress_bar_placeholder.progress(pct)
-                table_placeholder.markdown(
-                    render_job_status_table(step_current,st.session_state['list_step_total']), unsafe_allow_html=True
-                )
-                if current_status == 'COMPLETED' or (total_steps > 0 and step_current >= total_steps) :
-                    st.session_state['processing_complete'] = True
-                    st.rerun()  # Refresh the page to show completion
+                if current_status == 'COMPLETED' or (total_steps > 0 and step_current >= total_steps):
+                    proj['processing_complete'] = True
+                    proj['result_url'] = data.get('result_url')
+                    pct = 100
+                    status_html = status_badge('● Completed', 'completed')
                 elif current_status == 'FAILED':
-                    error_placeholder.markdown(status_badge('● Failed', 'failed'), unsafe_allow_html=True)
+                    st.markdown(status_badge('● Failed', 'failed'), unsafe_allow_html=True)
                     error_msg = data.get("message", "An unknown error occurred on the server.")
-                    error_placeholder.error(f"❌ **Analysis Failed:** {error_msg}")
-                    if st.button("Return to Upload Page"):
-                        del st.session_state['job_id']
-                        st.switch_page("pages/03_Upload.py")
-                    st.stop() # Halt the script
+                    st.error(f"❌ **Analysis Failed:** {error_msg}")
+                    if st.button("Return to Upload Page", key=f'ret_failed_{job_id}'):
+                        st.session_state['projects'].pop(job_id, None)
+                        st.session_state['active_job_id'] = None
+                        st.switch_page("pages/03_Data_prep.py")
+                    return
+                else:
+                    pct = int((step_current / total_steps) * 100) if total_steps else 0
+                    status_html = status_badge('● Running', 'running')
+            except requests.exceptions.HTTPError:
+                st.markdown(status_badge('● Failed', 'failed'), unsafe_allow_html=True)
+                if response.status_code == 404:
+                    st.error("❌ Job not found. It may have expired, or the backend was restarted.")
+                else:
+                    st.error(f"❌ Server error ({response.status_code}) while checking job status.")
+                if st.button("Return to Upload Page", key=f'ret_404_{job_id}'):
+                    st.session_state['projects'].pop(job_id, None)
+                    st.session_state['active_job_id'] = None
+                    st.switch_page("pages/03_Data_prep.py")
+                return
             except requests.exceptions.RequestException as e:
                 st.error(f'Connection Error, Retrying... : {e}')
-            time.sleep(3)
-            error_placeholder.empty()
-            
-    # Complete 100%           
-    if st.session_state['processing_complete']:
-        status_placeholder.markdown(status_badge('● Completed','completed'),unsafe_allow_html=True)
-        progress_pct_placeholder.markdown("### 100%")
-        progress_bar_placeholder.progress(100)
-        total_steps = len(st.session_state['list_step_total'])
-        table_placeholder.markdown(
-            render_job_status_table(total_steps,st.session_state['list_step_total']), unsafe_allow_html=True
+                return
+
+        status_placeholder_col, _ = st.columns([3, 2])
+        status_placeholder_col.markdown(status_html, unsafe_allow_html=True)
+
+        st.markdown('### Overall Progress')
+        st.markdown(f"### {pct}%")
+        st.progress(pct)
+
+        st.markdown("#### Pipeline Steps")
+        st.markdown(
+            render_job_status_table(step_current, proj['list_step_total'], proj['step_elapsed']),
+            unsafe_allow_html=True
         )
-        st.success('Analysis Complete Your Data is Ready')
-        if st.button('View your result',type='primary',use_container_width=True):
-            st.switch_page('pages/05_Dashboard.py')
+
+        if proj['processing_complete']:
+            st.success('Analysis Complete — Your Data is Ready')
+            result_url = proj.get('result_url')
+            if result_url:
+                # In a real deployment this link only ever arrives by email;
+                # it's echoed here too since this demo has no real inbox to
+                # check. Opening it (in this same browser, or after signing
+                # back in) re-verifies login before showing any results.
+                st.info(f"📧 We emailed a results link to **{proj['noti_email']}**: {result_url}")
+            if st.button('View your result', type='primary', use_container_width=True, key=f'view_result_{job_id}'):
+                st.switch_page('pages/05_Dashboard.py')
+
+    poll_job_status()

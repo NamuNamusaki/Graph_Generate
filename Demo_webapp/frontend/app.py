@@ -13,10 +13,14 @@ upload_page = st.Page('pages/03_Data_prep.py',title='Upload')
 waiting_page = st.Page('pages/04_Job_status.py',title='Jobstatus')
 dashboard_page = st.Page('pages/05_Dashboard.py',title='Result Dashboard')
 
-if st.session_state['logged_in']:
-    nav_pages = [home_page,upload_page,waiting_page,dashboard_page]
-else:
-    nav_pages = [home_page,login_page]
+# All pages are always registered with st.navigation() -- otherwise a
+# logged-out visit to a protected page's URL (e.g. a "results are ready"
+# email link opened before signing in) hits Streamlit's own generic "Page
+# not found" before the page's script -- and its require_login() redirect,
+# which actually knows how to send the user to Login and back -- ever runs.
+# Access control lives on each protected page itself (require_login()), not
+# here; the navbar below separately hides links the user can't use yet.
+nav_pages = [home_page, login_page, upload_page, waiting_page, dashboard_page]
 
 pg = st.navigation(nav_pages,position='hidden') # hides the default nav
 

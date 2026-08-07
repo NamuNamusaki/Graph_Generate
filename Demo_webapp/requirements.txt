@@ -1,6 +1,11 @@
-plotly==26.1.2
+plotly==6.0.1
 pandas==3.0.2
 streamlit
 requests
 matplotlib
 reportlab
+Pillow
+fastapi
+pydantic
+uvicorn
+python-multipart

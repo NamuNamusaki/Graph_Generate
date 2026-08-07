@@ -53,7 +53,16 @@ with st.form("login_form"):
                         st.session_state['username'] = username_input.strip()
                         st.session_state['access_token'] = token
                         st.success('Login Successful Redirecting...')
-                        st.switch_page('pages/01_Home.py')
+
+                        # Honor a deep link that brought the user here (e.g. a
+                        # "results are ready" email link that required login
+                        # first -- see require_login()'s next_page param).
+                        # st.switch_page() clears query params by default, so
+                        # job_uuid has to be re-attached explicitly for the
+                        # destination page to still see it.
+                        next_page = st.query_params.get('next', 'pages/01_Home.py')
+                        job_uuid = st.query_params.get('job_uuid')
+                        st.switch_page(next_page, query_params={'job_uuid': job_uuid} if job_uuid else None)
                         
                     elif response.status_code == 401:                        
                         st.error('Incorrect username or password')

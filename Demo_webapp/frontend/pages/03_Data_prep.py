@@ -3,15 +3,17 @@ import pandas as pd
 import json
 import requests
 import re
+import uuid
 from datetime import datetime
 import os
 from config import API_URL
 from auth import require_login, get_auth_headers
+from state import ensure_projects_store, create_project, reset_upload_form
 
 st.set_page_config(page_title="Upload Sample", layout="centered")
 
 require_login()
-
+ensure_projects_store()
 
 # Helper function
 def format_bioac_name(name):
@@ -43,6 +45,12 @@ def load_bioactivity_map():
         return dict(zip(df['Bioactivity'], df['id']))
     except FileNotFoundError:
         st.error("⚠️ Database file 'bioactivity.csv' is missing! Please ensure it exists in the root directory.")
+        return {}
+    except pd.errors.EmptyDataError:
+        st.error("⚠️ Database file 'bioactivity.csv' is empty.")
+        return {}
+    except KeyError as e:
+        st.error(f"⚠️ 'bioactivity.csv' is missing an expected column: {e}")
         return {}
 
 # ── Page header ───────────────────────────────────────────────────────────────
@@ -84,16 +92,16 @@ if st.session_state['upload_step'] == 1:
                     max_selections=3)
     st.multiselect('ML applied to peptides with unknown bioactivity (Group 4)',
                     options=['AMP','NP','ATHP'],
-                    key='ml_pred')
+                    key='ml_models_id')
     st.divider()
 
     # -------- 1.3 In-silico Digestion Settings -----------
     st.markdown('*In-silico Digestion Settings*')
     col_enz, col_miss = st.columns(2)
     with col_enz:
-        st.selectbox('select one enzyme for insilico digestion', options=['Trypsin','Pepsin'],key='clevage_enz')
+        st.selectbox('select one enzyme for insilico digestion', options=['Trypsin','Pepsin'],key='enzyme_id')
     with col_miss:
-        st.selectbox('Maximum missed cleavage sites allowed per peptide (Default: 4)',options=['0','1','2','3'],index=3,key='miss_clevages')
+        st.selectbox('Maximum missed cleavage sites allowed per peptide (Default: 4)',options=['0','1','2','3'],index=3,key='miss')
     st.divider()
 
     # -------- 1.4 Sequence Upload -----------
@@ -118,10 +126,10 @@ if st.session_state['upload_step'] == 1:
         if not st.session_state.get('bioactivities'):
             st.error('Please select at least one Bioactivity.')
             st.stop()
-        if not st.session_state.get('clevage_enz'):
+        if not st.session_state.get('enzyme_id'):
             st.error('Please select a Cleavage Enzyme.')
             st.stop()
-        if not st.session_state.get('ml_pred'):
+        if not st.session_state.get('ml_models_id'):
             st.error('Please select at least one ML prediction.')
             st.stop()
 
@@ -152,16 +160,22 @@ if st.session_state['upload_step'] == 1:
             "sample_name":  st.session_state.get('sample_name', '').strip(),
             "organism":     st.session_state.get('organism', '').strip() or None,
             "description":  st.session_state.get('description', '').strip() or None,
-            "list_bioactivity_id":   selected_ids,
-            "bioactivities_display": st.session_state['bioactivities'],
-            "ml_predictions":        st.session_state['ml_pred'],
-            "clevage_enz":           st.session_state['clevage_enz'],
-            "miss_clevages":         int(st.session_state.get('miss_clevages')),
+            "list_bioactivities_id":   selected_ids,
+            "ml_models_id":        st.session_state['ml_models_id'],
+            "enzyme_id":           st.session_state['enzyme_id'],
+            "miss":         int(st.session_state.get('miss')),
             "fasta_content":         fasta_content,
-            "input_fasta_path":      fasta_name
         }
         st.session_state['api_payload'] = api_payload
-        st.session_state['display_file_name'] = fasta_name 
+        # Bioactivity display names are frontend-only and never sent to the
+        # backend, but they're snapshotted here (not just read later from the
+        # 'bioactivities' widget key) because Streamlit clears a widget's
+        # session_state entry once a rerun happens where that widget isn't
+        # instantiated -- Step 2 never renders the multiselect again, so by
+        # the time "Confirm and Process" triggers its own rerun, 'bioactivities'
+        # would already be gone.
+        st.session_state['bioactivities_display'] = list(st.session_state['bioactivities'])
+        st.session_state['display_file_name'] = fasta_name
         st.session_state['upload_step'] = 2
         st.rerun()
 
@@ -180,12 +194,18 @@ elif st.session_state['upload_step'] == 2:
         st.markdown(f'**Organism:**     {payload["organism"] or "-"}')
         st.divider()
         st.markdown('**Analysis Parameters**')
-        st.markdown(f'**Bioactivities:** {", ".join(payload["bioactivities_display"]) if payload["bioactivities_display"] else "-"}')
-        st.markdown(f'**ML Predictions:** {", ".join(payload["ml_predictions"]) if payload["ml_predictions"] else "-"}')
+        # Bioactivity display names are frontend-only (never sent to the backend),
+        # so they're read from the stable 'bioactivities_display' snapshot taken
+        # in Step 1, not from api_payload (which only carries list_bioactivities_id)
+        # and not from the 'bioactivities' widget key (which Streamlit clears
+        # once this page stops rendering that widget).
+        bioactivities_display = st.session_state.get('bioactivities_display', [])
+        st.markdown(f'**Bioactivities:** {", ".join(bioactivities_display) if bioactivities_display else "-"}')
+        st.markdown(f'**ML Predictions:** {", ".join(payload["ml_models_id"]) if payload["ml_models_id"] else "-"}')
         st.divider()
         st.markdown(f'**Insilico Digestion Settings**')
-        st.markdown(f'**Cleavage Enzyme:**       {payload["clevage_enz"]}')
-        st.markdown(f'**Missed Cleavage Sites:** {payload["miss_clevages"]}')
+        st.markdown(f'**Cleavage Enzyme:**       {payload["enzyme_id"]}')
+        st.markdown(f'**Missed Cleavage Sites:** {payload["miss"]}')
         st.markdown(f'**Sequence File:**         {st.session_state["display_file_name"]}')        
         st.markdown('**Description**')
         st.info(payload['description'] or '-')
@@ -203,24 +223,46 @@ elif st.session_state['upload_step'] == 2:
                 current_user    = st.session_state.get('username', 'user')
                 project_name    = re.sub(r'\W+', ' ', payload['project_name'])
                 submitted_at    = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                job_uuid        = f'{current_user}_{project_name}_{submitted_at}'
+                # UUIDv3: RFC 4122's MD5-based UUID variant. MD5 digests are 16
+                # bytes, which is exactly what a UUID is (Binary16) -- str()
+                # renders those 16 bytes in the standard 8-4-4-4-12 hex form.
+                seed            = f'{current_user}_{project_name}_{submitted_at}'
+                job_uuid        = str(uuid.uuid3(uuid.NAMESPACE_OID, seed))
                 payload['job_uuid'] = job_uuid
 
                 # 2. Attach JWT security token
                 headers = get_auth_headers()
                 # 3. Send Request
                 api_url = f'{API_URL}/jobs'
-                response = requests.post(api_url, json=payload,headers=headers)
-                
-                if response.status_code in [200, 201, 202]:
-                    # Keep the data
-                    st.session_state['job_id'] = response.json().get('job_id',job_uuid)
-                    st.session_state['processing_complete'] = False
-                    st.session_state['waiting_step'] = 1
-                    st.session_state['list_step_total'] = []
-                    st.switch_page('pages/04_Job_status.py')
-                else:
-                    st.error(f'Backend Error {response.status_code}: {response.text}"')
+                try:
+                    response = requests.post(api_url, json=payload, headers=headers, timeout=10)
+                    if response.status_code in [200, 201, 202]:
+                        # Register this submission as its own tracked project
+                        # (keyed by the backend-assigned job_id, an internal
+                        # identifier distinct from job_uuid) instead of
+                        # overwriting flat session_state keys, so an in-flight
+                        # project isn't lost if the user comes back here to
+                        # start another one. job_uuid is stored alongside it
+                        # so later pages can address the API with the right
+                        # identifier instead of job_id.
+                        response_data = response.json()
+                        new_job_id = response_data.get('job_id', job_uuid)
+                        new_job_uuid = response_data.get('job_uuid', job_uuid)
+                        # Stored separately from api_payload since bioactivities_display
+                        # is frontend-only and was never part of the POSTed payload.
+                        create_project(
+                            new_job_id, payload,
+                            st.session_state.get('bioactivities_display', []),
+                            job_uuid=new_job_uuid,
+                        )
+                        reset_upload_form()
+                        st.switch_page('pages/04_Job_status.py')
+                    else:
+                        st.error(f'Backend Error {response.status_code}: {response.text}')
+                except requests.exceptions.ConnectionError:
+                    st.error("⚠️ Cannot reach the server. Is the backend running?")
+                except requests.exceptions.Timeout:
+                    st.error("⚠️ The server took too long to respond. Please try again.")
+                except requests.exceptions.RequestException as e:
+                    st.error(f'Connection Error: {e}')
 
-                        
-                    

@@ -19,6 +19,7 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image as RLImage, Table, TableStyle, PageBreak
 from config import API_URL
 from auth import require_login, get_auth_headers
+from state import ensure_projects_store, get_active_project, project_switcher, create_project, set_active_project
 
 st.set_page_config(page_title="Result Dashboard", layout="centered")
 
@@ -32,19 +33,88 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-require_login()
-if 'job_id' not in st.session_state:
+require_login(next_page='pages/05_Dashboard.py')
+ensure_projects_store()
+
+# Arriving via a direct/emailed results link (?job_uuid=...) rather than
+# in-app navigation. require_login() above already re-verified the session
+# is authenticated -- this whole script reruns top-to-bottom on every single
+# visit, so that check is never skipped or served from a stale cache. If
+# this job isn't already tracked in this browser session (a fresh session
+# from clicking the emailed link), fetch it fresh from the backend -- itself
+# another Authorization-header-gated call, so a stolen/guessed link still
+# can't be used to bypass login.
+linked_job_uuid = st.query_params.get('job_uuid')
+if linked_job_uuid:
+    already_tracked = any(
+        p.get('job_uuid') == linked_job_uuid for p in st.session_state['projects'].values()
+    )
+    if not already_tracked:
+        try:
+            status_resp = requests.get(
+                f"{API_URL}/status/{linked_job_uuid}", headers=get_auth_headers(), timeout=10
+            )
+            status_resp.raise_for_status()
+            status_data = status_resp.json()
+        except requests.exceptions.RequestException as e:
+            st.error(f"⚠️ Could not load this job: {e}")
+            st.stop()
+        # api_payload/bioactivities_display are only ever known to the
+        # original submitting session -- the backend never stores or
+        # returns them, so a job opened this way starts with none. Every
+        # place that reads them already falls back gracefully (N/A, "-").
+        create_project(status_data['job_id'], {}, [], job_uuid=linked_job_uuid)
+    else:
+        for jid, p in st.session_state['projects'].items():
+            if p.get('job_uuid') == linked_job_uuid:
+                set_active_project(jid)
+                break
+    # Consume the query param so it doesn't keep overriding the project
+    # switcher below on every later rerun of this same browser session.
+    del st.query_params['job_uuid']
+
+job_id, project = get_active_project()
+if job_id is None:
     st.warning("⚠️ No data found. Please go back to the Upload page and submit a sequence.")
     st.stop()
 
-job_uuid = st.session_state['job_id']
+# job_id (above) is the internal project-tracking identifier; job_uuid is
+# the separate, backend-assigned identifier every API call below actually
+# addresses the job by.
+job_uuid = project.get('job_uuid')
 AUTH_HEADERS = get_auth_headers()
 
 #API FETCHING FUNCTIONS
-@st.cache_data(show_spinner="Fetching data from server...")
-def fetch_summary_data(job_id):
+# NOTE: deliberately NOT @st.cache_data. The same job_uuid can legitimately
+# return a different answer over time now (409/None while output_result_path
+# is still null, then real data once the job finishes) -- st.cache_data
+# assumes the same arguments always produce the same result, so caching this
+# would permanently freeze whatever the FIRST call happened to see (we hit
+# exactly this bug while testing: a job polled to completion still showed
+# "not ready" on the Dashboard because the pre-completion 409/None response
+# had been cached under that job_uuid). Once results are in, they don't change
+# again for that job, so this trades a little redundant fetching for
+# correctness rather than trying to hand-manage cache invalidation.
+def fetch_summary_data(job_uuid):
+    """
+    Returns None if the job's results aren't ready yet (backend responds 409
+    because JOBS.output_result_path is still null) -- distinct from {}, which
+    means "asked, got a real answer, there's just no data." Callers should
+    check for None and show a "still processing" message rather than an
+    empty dashboard.
+    """
     try:
-        response = requests.get(f"{API_URL}/results/{job_id}/summary", headers=AUTH_HEADERS)
+        response = requests.get(f"{API_URL}/results/{job_uuid}/summary", headers=AUTH_HEADERS)
+        if response.status_code == 409:
+            return None
+        if response.status_code == 401:
+            # Re-checked on every single visit (this call is never cached) --
+            # if the backend ever rejects the token, don't show results from
+            # a session that's no longer actually authorized. Force a real
+            # re-login rather than just erroring in place.
+            st.session_state['logged_in'] = False
+            st.warning("⚠️ Your session has expired. Please log in again to view this result.")
+            st.switch_page("pages/02_Login.py")
         response.raise_for_status()
         df = pd.DataFrame(response.json())
 
@@ -58,24 +128,25 @@ def fetch_summary_data(job_id):
         st.error(f"⚠️ Could not fetch summary data from the server. Details: {e}")
         return {}
 
-    
-def fetch_sequence_csv(job_id, group_name, bioactivity):
+
+def fetch_sequence_csv(job_uuid, group_name, bioactivity):
     """
     Handoff Note:
-    Endpoint: GET /api/results/{job_id}/download?group={group_name}&bioactivity={bioactivity}
+    Endpoint: GET /api/results/{job_uuid}/download?group={group_name}&bioactivity={bioactivity}
     Expected Response: Plain text CSV string.
     """
     try:
         # Safe URL formatting
-        url = f"{API_URL}/results/{job_id}/download"
+        url = f"{API_URL}/results/{job_uuid}/download"
         params = {"group": group_name, "bioactivity": bioactivity}
-        response = requests.get(url, params=params)
-        
+        response = requests.get(url, params=params, headers=AUTH_HEADERS, timeout=10)
+
         if response.status_code == 200:
             return response.content # Returns raw bytes perfect for the download button
         return None
-    except:
+    except requests.exceptions.RequestException:
         return None
+
 
 # Helper Function
 # Function to transform the bioactivity name
@@ -209,20 +280,32 @@ def summary_dashboard(group_dfs):
     with col_select:
         chart_type = st.selectbox("Chart Type", options=["Pie Chart", "Bar Chart"],key='summary_chart_type')
     with col_html:
+        try:
+            html_report = generate_html_report(group_dfs)
+        except Exception as e:
+            st.error(f"⚠️ Could not build the HTML report: {e}")
+            html_report = None
         st.download_button(
             "📄 Download HTML Report",
-            data=generate_html_report(group_dfs),
+            data=html_report or "",
             file_name="bioactivity_dashboard_report.html",
             mime="text/html",
             use_container_width=True,
+            disabled=html_report is None,
         )
     with col_pdf:
+        try:
+            pdf_report = generate_pdf_report(group_dfs)
+        except Exception as e:
+            st.error(f"⚠️ Could not build the PDF report: {e}")
+            pdf_report = None
         st.download_button(
             "📑 Download PDF Report",
-            data=generate_pdf_report(group_dfs),
+            data=pdf_report or b"",
             file_name="bioactivity_dashboard_report.pdf",
             mime="application/pdf",
             use_container_width=True,
+            disabled=pdf_report is None,
         )
     for i, (group_name, df) in enumerate(group_dfs.items()):         
         # Create new row every 2 items
@@ -292,10 +375,11 @@ def build_summary_rows(group_dfs):
     Shared builder for the Project Detail & Statistical Summary table,
     reused by the on-screen table and the HTML/PDF report exports.
     """
+    api_payload = project.get('api_payload', {})
     summary_data = {
-        'Organism': st.session_state.get('api_payload',{}).get('organism','N/A'),
-        'Clevage Enzyme': st.session_state.get('api_payload',{}).get('clevage_enz','-'),
-        'Missed Cleavages': st.session_state.get('api_payload',{}).get('miss_clevages','-'),
+        'Organism': api_payload.get('organism') or 'N/A',
+        'Clevage Enzyme': str(api_payload.get('clevage_enz') or '-'),
+        'Missed Cleavages': str(api_payload.get('miss_clevages', '-')),
     }
 
     for group_name, df in group_dfs.items():
@@ -491,7 +575,11 @@ def render_group_tab(group_name,group_dfs):
     st.markdown("<hr style='margin-bottom: 10px; margin-top: 5px;'>", unsafe_allow_html=True)
 
     # Sort Datail of the table in group 1 to 3b
-    interesed_list =st.session_state.get('Interested_Bioactivity',[])
+    # bioactivities_display is frontend-only (never sent to the backend), so
+    # it lives as a sibling field on the project dict, not inside api_payload.
+    interesed_list = [
+        b.lower() for b in project.get('bioactivities_display', [])
+    ]
     df['is_prior'] = df['Bioactivity'].str.lower().isin(interesed_list)
     df = df.sort_values(by=['is_prior', 'nPepSeq'], ascending=[False, False])
     df = df.reset_index(drop=True)
@@ -607,27 +695,17 @@ def render_ml_tab():
             )
         st.markdown("<hr style='margin-bottom: 10px; margin-top: 5px;'>", unsafe_allow_html=True)
 
-
-
-# Get Sequence File function
-def get_sequence_path(group_name,bioactivity_name):
-    BASE_DIR = 'Result_Sequence'
-    target_folder = group_name.replace("Group ", "ResultG")
-    file_path = os.path.join(BASE_DIR, target_folder, f"{bioactivity_name}.csv")
-    return file_path
-
-def get_stat_file():
-    BASE_DIR = 'Result_Sequence'
-    if not os.path.exists(BASE_DIR):
-        return []
-    #find file inside the folder
-    return glob.glob(os.path.join(BASE_DIR, '**', 'RankBioactivity_*.csv'), recursive=True)
-
-
 # Tab Name Define
 st.title("Peptide Sequence Bioactivity Dashboard")
-st.markdown(f"**Job ID:** `{job_uuid}`")
+project_switcher("Viewing project")
+st.markdown(f"**Job ID:** `{job_id}`")
 grouped_data = fetch_summary_data(job_uuid)
+
+if grouped_data is None:
+    # Backend responded 409: JOBS.output_result_path is still null for this
+    # job, i.e. the (simulated) worker hasn't finished writing results yet.
+    st.info("⏳ This job's results aren't ready yet. Please check back once processing has finished.")
+    st.stop()
 
 tab_titles = ["Summary", "Group 1", "Group 2", "Group 3a", "Group 3b", "ML Prediction"]
 tabs = st.tabs(tab_titles)
