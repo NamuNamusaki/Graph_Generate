@@ -634,23 +634,46 @@ def render_group_tab(group_name,group_dfs):
 # MODEL_INFO / generate_mock_ml_predictions with the real model metadata
 # and CSV result files produced by the worker/API job.
 # -------------------------------------------------------------------------
+# Maps each short bioactivity code (as shown in the "Model Name" column) to
+# its full, human-readable name -- e.g. NP -> "Neuropeptide", AMP ->
+# "Antimicrobial". Kept as one lookup table instead of hand-typing a full
+# description string per model, so the short code and its expansion can
+# never drift out of sync, and adding a new model later only needs one
+# dictionary entry rather than a new hardcoded sentence.
+BIOACTIVITY_FULL_NAMES = {
+    "ATHP": "Antihypertensive",
+    "AMP": "Antimicrobial",
+    "NP": "Neuropeptide",
+}
+
+
+def describe_bioactivity_model(code: str) -> str:
+    """Expands a short bioactivity code into the description shown below its
+    name in the ML Prediction table, e.g. describe_bioactivity_model("NP")
+    -> "Neuropeptide model.". Falls back to the code itself if it's not in
+    BIOACTIVITY_FULL_NAMES, so an unmapped code still renders instead of
+    crashing the page."""
+    full_name = BIOACTIVITY_FULL_NAMES.get(code, code)
+    return f"{full_name} model."
+
+
 MODEL_INFO = [
     {
         "key": "athp",
         "name": "ATHP",
-        "description": "Antihypertensive model.",
+        "description": describe_bioactivity_model("ATHP"),
         "n_predictions": 1240,
     },
     {
         "key": "amp",
         "name": "AMP",
-        "description": "Antimicrobial model.",
+        "description": describe_bioactivity_model("AMP"),
         "n_predictions": 1240,
     },
     {
         "key": "np",
         "name": "NP",
-        "description": "Neuropeptide model.",
+        "description": describe_bioactivity_model("NP"),
         "n_predictions": 1240,
     },
 ]

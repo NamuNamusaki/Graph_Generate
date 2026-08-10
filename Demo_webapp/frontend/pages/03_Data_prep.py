@@ -2,9 +2,6 @@ import streamlit as st
 import pandas as pd
 import json
 import requests
-import re
-import uuid
-from datetime import datetime
 import os
 from config import API_URL
 from auth import require_login, get_auth_headers
@@ -70,10 +67,10 @@ if st.session_state['upload_step'] == 1:
     st.header('Sample Information')
     col1,col2 = st.columns(2)
     with col1:
-        st.text_input("Project Name*",  key='project_name')
+        st.text_input("Project Name :red[*]",  key='project_name')
         st.text_input("Organism",       key='organism')
     with col2:
-        st.text_input("Sample Name*",   key='sample_name')
+        st.text_input("Sample Name",   key='sample_name')
         st.text_area("Description",     key='description')
     st.divider()
     # -------- 1.2 Analysis Parameters -----------
@@ -86,11 +83,11 @@ if st.session_state['upload_step'] == 1:
         all_bioactivities = [format_bioac_name(name) for name in fallback]
     
     st.multiselect(
-                    "Select Bioactivities (Max 3):*",
+                    "Select Bioactivities (Max 3): :red[*]",
                     options=all_bioactivities,
                     key='bioactivities',
                     max_selections=3)
-    st.multiselect('ML applied to peptides with unknown bioactivity (Group 4)',
+    st.multiselect('ML applied to peptides with unknown bioactivity (Group 4) red[*]',
                     options=['AMP','NP','ATHP'],
                     key='ml_models_id')
     st.divider()
@@ -99,7 +96,7 @@ if st.session_state['upload_step'] == 1:
     st.markdown('*In-silico Digestion Settings*')
     col_enz, col_miss = st.columns(2)
     with col_enz:
-        st.selectbox('select one enzyme for insilico digestion', options=['Trypsin','Pepsin'],key='enzyme_id')
+        st.selectbox('select one enzyme for insilico digestion red[*]', options=['Trypsin','Pepsin'],key='enzyme_id')
     with col_miss:
         st.selectbox('Maximum missed cleavage sites allowed per peptide (Default: 4)',options=['0','1','2','3'],index=3,key='miss')
     st.divider()
@@ -220,15 +217,13 @@ elif st.session_state['upload_step'] == 2:
     with col_submit:
         if st.button('Confirm and Process',type='primary'):
             with st.spinner('Sending data to Backend...'):
-                current_user    = st.session_state.get('username', 'user')
-                project_name    = re.sub(r'\W+', ' ', payload['project_name'])
-                submitted_at    = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                # UUIDv3: RFC 4122's MD5-based UUID variant. MD5 digests are 16
-                # bytes, which is exactly what a UUID is (Binary16) -- str()
-                # renders those 16 bytes in the standard 8-4-4-4-12 hex form.
-                seed            = f'{current_user}_{project_name}_{submitted_at}'
-                job_uuid        = str(uuid.uuid3(uuid.NAMESPACE_OID, seed))
-                payload['job_uuid'] = job_uuid
+                # job_uuid is no longer generated here -- the backend now
+                # generates it (see Mock_backend.py's submit_analysis()) and
+                # hands it back in the response below, the same way a real
+                # database generates its own primary/unique key on INSERT
+                # rather than accepting a client-picked one. So `payload`
+                # goes out exactly as built in Step 1, with no job_uuid field
+                # in it at all.
 
                 # 2. Attach JWT security token
                 headers = get_auth_headers()
@@ -237,6 +232,12 @@ elif st.session_state['upload_step'] == 2:
                 try:
                     response = requests.post(api_url, json=payload, headers=headers, timeout=10)
                     if response.status_code in [200, 201, 202]:
+                        response_data = response.json()
+                        new_job_id = response_data.get('job_id')
+                        new_job_uuid = response_data.get('job_uuid')
+                        if not new_job_id or not new_job_uuid:
+                            st.error('Backend accepted the job but did not return a job_id/job_uuid for it.')
+                            st.stop()
                         # Register this submission as its own tracked project
                         # (keyed by the backend-assigned job_id, an internal
                         # identifier distinct from job_uuid) instead of
@@ -245,9 +246,6 @@ elif st.session_state['upload_step'] == 2:
                         # start another one. job_uuid is stored alongside it
                         # so later pages can address the API with the right
                         # identifier instead of job_id.
-                        response_data = response.json()
-                        new_job_id = response_data.get('job_id', job_uuid)
-                        new_job_uuid = response_data.get('job_uuid', job_uuid)
                         # Stored separately from api_payload since bioactivities_display
                         # is frontend-only and was never part of the POSTed payload.
                         create_project(
