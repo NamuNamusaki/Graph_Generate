@@ -117,7 +117,7 @@ if st.session_state['upload_step'] == 1:
         if not st.session_state.get('project_name').strip():
             st.error('Please fill in the Project Name.')
             st.stop()
-        if not st.session_state.get('sample_name').strip():
+        if not st.session_state.get('sample_name'):
             st.error('Please fill in the Sample Name.')
             st.stop()
         if not st.session_state.get('bioactivities'):
@@ -154,7 +154,7 @@ if st.session_state['upload_step'] == 1:
         # Construct the standardized JSON dictionary
         api_payload = {
             "project_name": st.session_state['project_name'].strip(),
-            "sample_name":  st.session_state.get('sample_name', '').strip(),
+            "sample_name":  st.session_state.get('sample_name', '').strip() or None,
             "organism":     st.session_state.get('organism', '').strip() or None,
             "description":  st.session_state.get('description', '').strip() or None,
             "list_bioactivities_id":   selected_ids,
@@ -187,7 +187,7 @@ elif st.session_state['upload_step'] == 2:
     with st.container(border=True):
         st.markdown('**Sample Information**')
         st.markdown(f'**Project Name:** {payload["project_name"]}')
-        st.markdown(f'**Sample Name:**  {payload["sample_name"]}')
+        st.markdown(f'**Sample Name:**  {payload["sample_name"] or "-"}')
         st.markdown(f'**Organism:**     {payload["organism"] or "-"}')
         st.divider()
         st.markdown('**Analysis Parameters**')
