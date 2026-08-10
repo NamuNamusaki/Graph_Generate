@@ -1,0 +1,10 @@
+# Deps for Mock_backend.py (the "api" service). Kept separate from
+# requirements.txt (the frontend/Streamlit deps) so each container only
+# installs what it actually runs -- the Streamlit image never needs fastapi,
+# and the API image never needs streamlit/plotly/reportlab.
+pandas==3.0.2
+fastapi
+pydantic
+uvicorn
+python-multipart
+mysql-connector-python

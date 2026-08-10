@@ -1,0 +1,22 @@
+# Applies to both Dockerfile and Dockerfile.api -- their build context is
+# this folder (frontend/).
+
+__pycache__/
+*.pyc
+.venv/
+venv/
+.claude/
+.git/
+.gitignore
+
+# Local secrets -- never bake these into an image; pass them at run time via
+# docker-compose env_file / environment instead.
+.env
+.env.*
+
+# Scratch/verification scripts, not part of the app.
+_test_*.py
+
+# Editor/OS cruft.
+.vscode/
+.DS_Store

@@ -17,4 +17,4 @@ COPY . .
 EXPOSE 8501
 
 # 6 คำสั่งที่รันเมื่อ Container เริ่มทำงาน
-CMD ["streamlit","run","app_pass.py","--server.port=8501","--server.address=0.0.0.0"]
+CMD ["streamlit","run","app.py","--server.port=8501","--server.address=0.0.0.0"]
