@@ -3,7 +3,7 @@ import pandas as pd
 import json
 import requests
 import os
-from config import API_URL
+from config import API_BASE_URL
 from auth import require_login, get_auth_headers
 from state import ensure_projects_store, create_project, reset_upload_form
 
@@ -228,7 +228,7 @@ elif st.session_state['upload_step'] == 2:
                 # 2. Attach JWT security token
                 headers = get_auth_headers()
                 # 3. Send Request
-                api_url = f'{API_URL}/jobs'
+                api_url = f'{API_BASE_URL}/jobs'
                 try:
                     response = requests.post(api_url, json=payload, headers=headers, timeout=10)
                     if response.status_code in [200, 201, 202]:

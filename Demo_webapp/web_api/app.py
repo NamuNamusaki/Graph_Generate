@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Form, Header, HTTPException, Query
+from fastapi import FastAPI, Form, Header, HTTPException
 from pydantic import BaseModel
 from typing import Any, Dict, Optional
 import uvicorn
@@ -8,8 +8,6 @@ import re
 import itertools
 import uuid
 from pathlib import Path
-from fastapi.responses import Response
-import random
 import os
 import pandas as pd
 
@@ -105,6 +103,19 @@ def _group_label_from_filename(stem: str) -> Optional[str]:
     return f"Group {num}{letter}"
 
 
+# Matches the per-group sequence-file folders: "ResultG1", "ResultG3a", etc.
+RESULT_DIR_PATTERN = re.compile(r'^ResultG(\d+)([a-z]?)$')
+
+
+def _group_label_from_result_dirname(dirname: str) -> Optional[str]:
+    """'ResultG3a' -> 'Group 3a'; returns None if it doesn't match."""
+    m = RESULT_DIR_PATTERN.match(dirname)
+    if not m:
+        return None
+    num, letter = m.groups()
+    return f"Group {num}{letter}"
+
+
 def _simulate_worker_output_path(job_uuid: str) -> str:
     """
     STAND-IN for what a real background worker would do: write results to a
@@ -115,36 +126,6 @@ def _simulate_worker_output_path(job_uuid: str) -> str:
     what's real here, not the data.
     """
     return str(SAMPLE_RESULT_DIR)
-
-
-def _get_job_output_dir(job_uuid: str) -> Path:
-    """
-    Resolves JOBS.output_result_path for a job (looked up by job_uuid, the
-    API-facing identifier) and validates it, mirroring what a real API would
-    do before serving results:
-      - 404 if the job doesn't exist at all
-      - 409 if the job exists but hasn't finished yet (output_result_path
-        is still null) -- this is the "check output_result_path first" gate
-        the frontend is expected to respect
-      - 500 if the stored path is missing/unreadable on disk (data integrity
-        problem -- the DB says results exist, the filesystem disagrees)
-    """
-    job = mock_jobs_db.get(job_uuid)
-    if job is None:
-        raise HTTPException(status_code=404, detail="Job not found")
-
-    output_path = job.get("output_result_path")
-    if not output_path:
-        raise HTTPException(
-            status_code=409,
-            detail="Job results are not ready yet (output_result_path is not set). "
-                   "Wait for status to reach SUCCESS before requesting results.",
-        )
-
-    resolved = Path(output_path).resolve()
-    if not resolved.is_dir():
-        raise HTTPException(status_code=500, detail=f"output_result_path does not exist on disk: {output_path}")
-    return resolved
 
 
 # -----------------------------------------------------------------------------------------
@@ -194,6 +175,11 @@ def submit_analysis(payload: AnalyzePayload, authorization: Optional[str] = Head
         "status": "running",
         "step_current": 0,
         "output_result_path": None,
+        # Never actually set to anything but None in this mock -- there's no
+        # simulated failure path -- but GET /api/jobs/{job_uuid}/result
+        # always echoes this field so the frontend has one place to check
+        # for a failed job once a real worker can report one.
+        "error_message": None,
     }
     return {"job_id": job_id, "job_uuid": job_uuid, "message": "Job started"}
 
@@ -257,75 +243,81 @@ def get_status(job_uuid: str, authorization: Optional[str] = Header(None)):
     }
 
 # -----------------------------------------------------------------------------------------
-# 5. DASHBOARD RESULTS (05_Dashboard.py) — now reads real files instead of random data
+# 5. CONSOLIDATED JOB RESULT (05_Dashboard.py)
 # -----------------------------------------------------------------------------------------
-@app.get("/api/results/{job_uuid}/summary")
-def get_results_summary(job_uuid: str, authorization: Optional[str] = Header(None)):
+# One endpoint instead of the separate summary/download round trips this
+# replaces: everything the Dashboard needs about a job in a single
+# Authorization-header-gated call.
+@app.get("/api/jobs/{job_uuid}/result")
+def get_job_result(job_uuid: str, authorization: Optional[str] = Header(None)):
     """
-    Reads the 4 RankBioactivity_G*_2Enz.csv files (columns: Bioactivity, nPepSeq)
-    from THIS job's own output directory (JOBS.output_result_path) and returns
-    them as one flat list of {Group, Bioactivity, nPepSeq} records — the exact
-    shape 05_Dashboard.py's fetch_summary_data() already expects, so nothing
-    on the frontend needs to change for this endpoint's contract.
+    Returns:
+      - job_id, status, error_message: current job state. error_message is
+        always present (None unless the job failed) so the frontend has one
+        place to check instead of parsing HTTP status codes for it.
+      - stat_files: {group_label: [{"Bioactivity", "nPepSeq"}, ...]}, read
+        from this job's RankBioactivity_G*_2Enz.csv files.
+      - sequence_files: {group_label: {bioactivity_name: [{"PepSeq", ...}, ...]}},
+        read from every CSV under this job's ResultG*/ subfolders.
 
-    Raises 409 via _get_job_output_dir() if the job hasn't finished yet.
-    """
-    if not authorization:
-        raise HTTPException(status_code=401, detail="Missing Token")
-
-    job_output_dir = _get_job_output_dir(job_uuid)
-    stat_files = sorted(job_output_dir.glob("RankBioactivity_*.csv"))
-    if not stat_files:
-        raise HTTPException(status_code=404, detail="No statistical result files found")
-
-    records = []
-    for path in stat_files:
-        group_label = _group_label_from_filename(path.stem)
-        if group_label is None:
-            continue  # skip anything that doesn't match the expected naming pattern
-
-        # encoding="utf-8-sig" strips the leading BOM these files were saved with
-        # (otherwise the first column reads as "﻿Bioactivity", not "Bioactivity")
-        df = pd.read_csv(path, encoding="utf-8-sig")
-        missing = {"Bioactivity", "nPepSeq"} - set(df.columns)
-        if missing:
-            raise HTTPException(status_code=500, detail=f"{path.name} is missing columns: {sorted(missing)}")
-
-        for _, row in df.iterrows():
-            records.append({
-                "Group": group_label,
-                "Bioactivity": row["Bioactivity"],
-                "nPepSeq": int(row["nPepSeq"]),
-            })
-
-    return records
-
-@app.get("/api/results/{job_uuid}/download")
-def download_sequence_csv(
-    job_uuid: str,
-    group: str = Query(...),
-    bioactivity: str = Query(...),
-    authorization: Optional[str] = Header(None),
-):
-    """
-    Returns specific peptide sequences and scores for a given group and bioactivity
-    as a downloadable CSV file (matches what 05_Dashboard.py's fetch_sequence_csv expects).
+    stat_files/sequence_files are empty ({}) until the job actually reaches
+    SUCCESS (i.e. output_result_path is set) -- the frontend should treat an
+    empty response the same way it used to treat the old endpoints' 409:
+    "still processing," not an error. authorization/existence problems
+    (missing token, unknown job, corrupt result files) still raise real HTTP
+    errors, since those are protocol-level failures, not job states.
     """
     if not authorization:
         raise HTTPException(status_code=401, detail="Missing Token")
+    if job_uuid not in mock_jobs_db:
+        raise HTTPException(status_code=404, detail="Job not found")
 
-    # Generate mock sequence rows
-    data = [
-        {
-            "Sequence": "".join(random.choices("ACDEFGHIKLMNPQRSTVWY", k=random.randint(5, 15))),
-            "Score": round(random.uniform(0.60, 0.99), 4)
-        }
-        for _ in range(random.randint(5, 25))
-    ]
+    job = mock_jobs_db[job_uuid]
+    output_path = job.get("output_result_path")
 
-    df = pd.DataFrame(data)
-    csv_content = df.to_csv(index=False)
-    return Response(content=csv_content, media_type="text/csv")
+    stat_files: Dict[str, list] = {}
+    sequence_files: Dict[str, Dict[str, list]] = {}
+
+    if output_path:
+        job_output_dir = Path(output_path).resolve()
+        if not job_output_dir.is_dir():
+            raise HTTPException(status_code=500, detail=f"output_result_path does not exist on disk: {output_path}")
+
+        # Stat files: RankBioactivity_G*_2Enz.csv (columns: Bioactivity, nPepSeq)
+        for path in sorted(job_output_dir.glob("RankBioactivity_*.csv")):
+            group_label = _group_label_from_filename(path.stem)
+            if group_label is None:
+                continue  # skip anything that doesn't match the expected naming pattern
+
+            # encoding="utf-8-sig" strips the leading BOM these files were saved with
+            # (otherwise the first column reads as "﻿Bioactivity", not "Bioactivity")
+            df = pd.read_csv(path, encoding="utf-8-sig")
+            missing = {"Bioactivity", "nPepSeq"} - set(df.columns)
+            if missing:
+                raise HTTPException(status_code=500, detail=f"{path.name} is missing columns: {sorted(missing)}")
+            stat_files[group_label] = df.to_dict(orient="records")
+
+        # Sequence files: every CSV under each ResultG*/ subfolder, keyed by
+        # its filename stem (the bioactivity name, e.g. "ACE_inhibitor").
+        for group_dir in sorted(job_output_dir.glob("Result*")):
+            if not group_dir.is_dir():
+                continue
+            group_label = _group_label_from_result_dirname(group_dir.name)
+            if group_label is None:
+                continue
+            bioactivity_files = {}
+            for seq_path in sorted(group_dir.glob("*.csv")):
+                seq_df = pd.read_csv(seq_path, encoding="utf-8-sig")
+                bioactivity_files[seq_path.stem] = seq_df.to_dict(orient="records")
+            sequence_files[group_label] = bioactivity_files
+
+    return {
+        "job_id": job["job_id"],
+        "status": job["status"],
+        "error_message": job.get("error_message"),
+        "stat_files": stat_files,
+        "sequence_files": sequence_files,
+    }
 
 if __name__ == "__main__":
     # 0.0.0.0, not 127.0.0.1: inside a container, 127.0.0.1 only accepts

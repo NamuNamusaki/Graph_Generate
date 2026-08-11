@@ -17,7 +17,7 @@ from reportlab.lib.units import cm
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image as RLImage, Table, TableStyle, PageBreak
-from config import API_URL
+from config import API_BASE_URL
 from auth import require_login, get_auth_headers
 from state import ensure_projects_store, get_active_project, project_switcher, create_project, set_active_project
 
@@ -52,7 +52,7 @@ if linked_job_uuid:
     if not already_tracked:
         try:
             status_resp = requests.get(
-                f"{API_URL}/status/{linked_job_uuid}", headers=get_auth_headers(), timeout=10
+                f"{API_BASE_URL}/status/{linked_job_uuid}", headers=get_auth_headers(), timeout=10
             )
             status_resp.raise_for_status()
             status_data = status_resp.json()
@@ -69,9 +69,15 @@ if linked_job_uuid:
             if p.get('job_uuid') == linked_job_uuid:
                 set_active_project(jid)
                 break
-    # Consume the query param so it doesn't keep overriding the project
-    # switcher below on every later rerun of this same browser session.
-    del st.query_params['job_uuid']
+    # Consume the query param so it doesn't keep overriding the project switcher
+    # below on every later rerun of this same browser session.
+    # st.query_params is an immutable object, so we convert it to a dict,
+    # remove the key, and assign the new dict back.
+    new_query_params = st.query_params.to_dict()
+    if 'job_uuid' in new_query_params:
+        del new_query_params['job_uuid']
+    st.query_params.clear()
+    st.query_params.update(new_query_params)
 
 job_id, project = get_active_project()
 if job_id is None:
@@ -86,27 +92,28 @@ AUTH_HEADERS = get_auth_headers()
 
 #API FETCHING FUNCTIONS
 # NOTE: deliberately NOT @st.cache_data. The same job_uuid can legitimately
-# return a different answer over time now (409/None while output_result_path
-# is still null, then real data once the job finishes) -- st.cache_data
-# assumes the same arguments always produce the same result, so caching this
-# would permanently freeze whatever the FIRST call happened to see (we hit
-# exactly this bug while testing: a job polled to completion still showed
-# "not ready" on the Dashboard because the pre-completion 409/None response
-# had been cached under that job_uuid). Once results are in, they don't change
-# again for that job, so this trades a little redundant fetching for
-# correctness rather than trying to hand-manage cache invalidation.
-def fetch_summary_data(job_uuid):
+# return a different answer over time now (empty stat_files/sequence_files
+# while output_result_path is still null, then real data once the job
+# finishes) -- st.cache_data assumes the same arguments always produce the
+# same result, so caching this would permanently freeze whatever the FIRST
+# call happened to see (we hit exactly this bug while testing: a job polled
+# to completion still showed "not ready" on the Dashboard because the
+# pre-completion response had been cached under that job_uuid). Once results
+# are in, they don't change again for that job, so this trades a little
+# redundant fetching for correctness rather than trying to hand-manage cache
+# invalidation.
+def fetch_job_result(job_uuid):
     """
-    Returns None if the job's results aren't ready yet (backend responds 409
-    because JOBS.output_result_path is still null) -- distinct from {}, which
-    means "asked, got a real answer, there's just no data." Callers should
-    check for None and show a "still processing" message rather than an
-    empty dashboard.
+    One call to GET /api/jobs/{job_uuid}/result -- replaces the old separate
+    summary/download round trips (one request per group/bioactivity CSV).
+    Returns the full parsed payload: {job_id, status, error_message,
+    stat_files, sequence_files}. stat_files/sequence_files come back empty
+    ({}) while the job is still processing -- callers should check `status`
+    rather than treating an empty dict as an error. Returns None (with an
+    st.error already shown) only on an actual request failure.
     """
     try:
-        response = requests.get(f"{API_URL}/results/{job_uuid}/summary", headers=AUTH_HEADERS)
-        if response.status_code == 409:
-            return None
+        response = requests.get(f"{API_BASE_URL}/jobs/{job_uuid}/result", headers=AUTH_HEADERS, timeout=15)
         if response.status_code == 401:
             # Re-checked on every single visit (this call is never cached) --
             # if the backend ever rejects the token, don't show results from
@@ -116,35 +123,9 @@ def fetch_summary_data(job_uuid):
             st.warning("⚠️ Your session has expired. Please log in again to view this result.")
             st.switch_page("pages/02_Login.py")
         response.raise_for_status()
-        df = pd.DataFrame(response.json())
-
-        # Convert CSV text into Pandas DataFrame for the frontend
-        group_dfs = {}
-        if 'Group' in df.columns:
-            for group_name, group_data in df.groupby('Group'):
-                group_dfs[group_name] = group_data.drop(columns=["Group"]).reset_index(drop=True)
-        return group_dfs
+        return response.json()
     except requests.exceptions.RequestException as e:
-        st.error(f"⚠️ Could not fetch summary data from the server. Details: {e}")
-        return {}
-
-
-def fetch_sequence_csv(job_uuid, group_name, bioactivity):
-    """
-    Handoff Note:
-    Endpoint: GET /api/results/{job_uuid}/download?group={group_name}&bioactivity={bioactivity}
-    Expected Response: Plain text CSV string.
-    """
-    try:
-        # Safe URL formatting
-        url = f"{API_URL}/results/{job_uuid}/download"
-        params = {"group": group_name, "bioactivity": bioactivity}
-        response = requests.get(url, params=params, headers=AUTH_HEADERS, timeout=10)
-
-        if response.status_code == 200:
-            return response.content # Returns raw bytes perfect for the download button
-        return None
-    except requests.exceptions.RequestException:
+        st.error(f"⚠️ Could not fetch job result from the server. Details: {e}")
         return None
 
 
@@ -378,8 +359,8 @@ def build_summary_rows(group_dfs):
     api_payload = project.get('api_payload', {})
     summary_data = {
         'Organism': api_payload.get('organism') or 'N/A',
-        'Clevage Enzyme': str(api_payload.get('clevage_enz') or '-'),
-        'Missed Cleavages': str(api_payload.get('miss_clevages', '-')),
+        'Clevage Enzyme': str(api_payload.get('enzyme_id') or '-'),
+        'Missed Cleavages': str(api_payload.get('miss', '-')),
     }
 
     for group_name, df in group_dfs.items():
@@ -590,16 +571,20 @@ def render_group_tab(group_name,group_dfs):
 
     for index, row in df_to_display.iterrows():
         bioactivity = row['Bioactivity']
+        raw_bioactivity = row['Raw_bioactiity']
         count = row['nPepSeq']
-        
+
         c1,c2,c3,c4,c5 = st.columns([0.5, 3, 1.5, 1.5, 1.5])
         with c1: st.markdown(f'{index+1}.',unsafe_allow_html=True)
         with c2: st.markdown(bioactivity,unsafe_allow_html=True)
         with c3: st.markdown(count,unsafe_allow_html=True)
         with c4:
             if bioactivity.lower() in interesed_list:
-                csv_bytes = fetch_sequence_csv(job_uuid, group_name, bioactivity)
-                if csv_bytes:
+                # sequence_files came back in the same GET /api/jobs/{job_uuid}/result
+                # call as the stat data -- no separate per-bioactivity request needed.
+                seq_records = sequence_files.get(group_name, {}).get(raw_bioactivity)
+                if seq_records:
+                    csv_bytes = pd.DataFrame(seq_records).to_csv(index=False).encode('utf-8')
                     st.download_button(
                         label="Download CSV",
                         data=csv_bytes,
@@ -722,13 +707,29 @@ def render_ml_tab():
 st.title("Peptide Sequence Bioactivity Dashboard")
 project_switcher("Viewing project")
 st.markdown(f"**Job ID:** `{job_id}`")
-grouped_data = fetch_summary_data(job_uuid)
 
-if grouped_data is None:
-    # Backend responded 409: JOBS.output_result_path is still null for this
-    # job, i.e. the (simulated) worker hasn't finished writing results yet.
+job_result = fetch_job_result(job_uuid)
+if job_result is None:
+    # A request-level failure -- fetch_job_result() already showed st.error().
+    st.stop()
+
+if job_result.get("error_message"):
+    st.error(f"❌ Analysis failed: {job_result['error_message']}")
+    st.stop()
+
+if job_result.get("status") != "SUCCESS":
+    # output_result_path is still null for this job, i.e. the (simulated)
+    # worker hasn't finished writing results yet.
     st.info("⏳ This job's results aren't ready yet. Please check back once processing has finished.")
     st.stop()
+
+# sequence_files is read by render_group_tab() as a module-level global, the
+# same way job_uuid/project already are.
+sequence_files = job_result.get("sequence_files") or {}
+grouped_data = {
+    group_name: pd.DataFrame(records)
+    for group_name, records in (job_result.get("stat_files") or {}).items()
+}
 
 tab_titles = ["Summary", "Group 1", "Group 2", "Group 3a", "Group 3b", "ML Prediction"]
 tabs = st.tabs(tab_titles)

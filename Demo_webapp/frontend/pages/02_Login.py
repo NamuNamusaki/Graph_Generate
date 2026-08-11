@@ -1,7 +1,7 @@
 import streamlit as st
 import requests
 import time
-from config import API_URL
+from config import API_BASE_URL
 st.set_page_config(page_title="Login", layout="centered")
 
 # ── Session-state defaults ────────────────────────────────────────────────────
@@ -14,7 +14,7 @@ if 'access_token' not in st.session_state:
     st.session_state['access_token'] = None
 
 # ── Constants ─────────────────────────────────────────────────────────────────
-LOGIN_URL = f"{API_URL}/login"
+LOGIN_URL = f"{API_BASE_URL}/login"
 # ── Page guard: redirect already-logged-in users away ────────────────────────
 if st.session_state["logged_in"]:
     st.switch_page("pages/01_Home.py")
@@ -25,8 +25,8 @@ st.markdown("Please Enter your Username and Password to Using this tool")
 
 # LOGIN FORM & API AUTHENTICATION
 with st.form("login_form"):
-    username_input = st.text_input("Username",key='login_username')
-    password_input = st.text_input("Password", type="password", key='login_password')
+    username_input = st.text_input("Username",key='username')
+    password_input = st.text_input("Password", type="password", key='password')
 
     submitted_login = st.form_submit_button("Login", type="primary")
     # ── Client-side validation (fast, no network call needed) ─────────────

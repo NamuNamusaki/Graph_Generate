@@ -2,7 +2,7 @@ import streamlit as st
 import time
 import re
 import requests
-from config import API_URL
+from config import API_BASE_URL
 from auth import require_login, get_auth_headers
 from state import ensure_projects_store, get_active_project, project_switcher
 
@@ -153,7 +153,7 @@ if project['waiting_step'] == 1:
                         'job_uuid': project['job_uuid'],
                         'email': email.strip()
                     }
-                    email_api_url = f"{API_URL}/notifications"
+                    email_api_url = f"{API_BASE_URL}/notifications"
                     email_response = requests.post(
                         email_api_url, json=email_payload, headers=get_auth_headers(), timeout=10
                     )
@@ -196,7 +196,7 @@ elif project['waiting_step'] == 2:
             status_html = status_badge('● Completed', 'completed')
         else:
             try:
-                response = requests.get(f"{API_URL}/status/{proj['job_uuid']}", headers=get_auth_headers(), timeout=10)
+                response = requests.get(f"{API_BASE_URL}/status/{proj['job_uuid']}", headers=get_auth_headers(), timeout=10)
                 response.raise_for_status()
                 data = response.json()
 
