@@ -196,7 +196,7 @@ elif project['waiting_step'] == 2:
             status_html = status_badge('● Completed', 'completed')
         else:
             try:
-                response = requests.get(f"{API_BASE_URL}/status/{proj['job_uuid']}", headers=get_auth_headers(), timeout=10)
+                response = requests.get(f"{API_BASE_URL}/jobs/{proj['job_uuid']}", headers=get_auth_headers(), timeout=10)
                 response.raise_for_status()
                 data = response.json()
 

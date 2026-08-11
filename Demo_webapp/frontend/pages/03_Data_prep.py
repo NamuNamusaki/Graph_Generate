@@ -225,7 +225,7 @@ elif st.session_state['upload_step'] == 2:
                 # goes out exactly as built in Step 1, with no job_uuid field
                 # in it at all.
 
-                # 2. Attach JWT security token
+                # 2. Attach security token
                 headers = get_auth_headers()
                 # 3. Send Request
                 api_url = f'{API_BASE_URL}/jobs'

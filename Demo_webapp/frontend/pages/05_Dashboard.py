@@ -52,7 +52,7 @@ if linked_job_uuid:
     if not already_tracked:
         try:
             status_resp = requests.get(
-                f"{API_BASE_URL}/status/{linked_job_uuid}", headers=get_auth_headers(), timeout=10
+                f"{API_BASE_URL}/jobs/{linked_job_uuid}", headers=get_auth_headers(), timeout=10
             )
             status_resp.raise_for_status()
             status_data = status_resp.json()
@@ -92,25 +92,27 @@ AUTH_HEADERS = get_auth_headers()
 
 #API FETCHING FUNCTIONS
 # NOTE: deliberately NOT @st.cache_data. The same job_uuid can legitimately
-# return a different answer over time now (empty stat_files/sequence_files
-# while output_result_path is still null, then real data once the job
-# finishes) -- st.cache_data assumes the same arguments always produce the
-# same result, so caching this would permanently freeze whatever the FIRST
-# call happened to see (we hit exactly this bug while testing: a job polled
-# to completion still showed "not ready" on the Dashboard because the
-# pre-completion response had been cached under that job_uuid). Once results
-# are in, they don't change again for that job, so this trades a little
-# redundant fetching for correctness rather than trying to hand-manage cache
+# return a different answer over time now (empty stat_files while
+# output_result_path is still null, then real data once the job finishes) --
+# st.cache_data assumes the same arguments always produce the same result,
+# so caching this would permanently freeze whatever the FIRST call happened
+# to see (we hit exactly this bug while testing: a job polled to completion
+# still showed "not ready" on the Dashboard because the pre-completion
+# response had been cached under that job_uuid). Once results are in, they
+# don't change again for that job, so this trades a little redundant
+# fetching for correctness rather than trying to hand-manage cache
 # invalidation.
 def fetch_job_result(job_uuid):
     """
-    One call to GET /api/jobs/{job_uuid}/result -- replaces the old separate
-    summary/download round trips (one request per group/bioactivity CSV).
-    Returns the full parsed payload: {job_id, status, error_message,
-    stat_files, sequence_files}. stat_files/sequence_files come back empty
-    ({}) while the job is still processing -- callers should check `status`
-    rather than treating an empty dict as an error. Returns None (with an
-    st.error already shown) only on an actual request failure.
+    One call to GET /jobs/{job_uuid}/result for the statistical data used to
+    draw the charts/tables. Returns {job_id, status, error_message,
+    stat_files}. stat_files comes back empty ({}) while the job is still
+    processing -- callers should check `status` rather than treating an
+    empty dict as an error. Returns None (with an st.error already shown)
+    only on an actual request failure.
+
+    Peptide sequence data is NOT included here -- see fetch_sequence_csv()
+    below, which fetches one bioactivity's sequences at a time, on demand.
     """
     try:
         response = requests.get(f"{API_BASE_URL}/jobs/{job_uuid}/result", headers=AUTH_HEADERS, timeout=15)
@@ -129,7 +131,28 @@ def fetch_job_result(job_uuid):
         return None
 
 
-# Helper Function
+def fetch_sequence_csv(job_uuid, group_name, bioactivity):
+    """
+    On-demand counterpart to fetch_job_result(): one call to
+    GET /jobs/{job_uuid}/download?group={group_name}&bioactivity={bioactivity}
+    for exactly the peptide sequences of the bioactivity the user clicked
+    "Download" for -- not fetched eagerly for every bioactivity on page load.
+    `bioactivity` must be the raw name (e.g. "ACE_inhibitor"), matching the
+    backend's CSV filenames, not the title-cased display name.
+    Returns the raw CSV bytes, or None if unavailable (missing file, job not
+    ready yet, or a request failure) -- callers show a "No File" fallback.
+    """
+    try:
+        url = f"{API_BASE_URL}/jobs/{job_uuid}/download"
+        params = {"group": group_name, "bioactivity": bioactivity}
+        response = requests.get(url, params=params, headers=AUTH_HEADERS, timeout=10)
+        if response.status_code == 200:
+            return response.content
+        return None
+    except requests.exceptions.RequestException:
+        return None
+
+# =========================== Helper Function ==========================
 # Function to transform the bioactivity name
 def format_bioac_name(name):
     if pd.isna(name):
@@ -580,11 +603,10 @@ def render_group_tab(group_name,group_dfs):
         with c3: st.markdown(count,unsafe_allow_html=True)
         with c4:
             if bioactivity.lower() in interesed_list:
-                # sequence_files came back in the same GET /api/jobs/{job_uuid}/result
-                # call as the stat data -- no separate per-bioactivity request needed.
-                seq_records = sequence_files.get(group_name, {}).get(raw_bioactivity)
-                if seq_records:
-                    csv_bytes = pd.DataFrame(seq_records).to_csv(index=False).encode('utf-8')
+                # On-demand: one GET /jobs/{job_uuid}/download call for just
+                # this bioactivity, not fetched ahead of time for every row.
+                csv_bytes = fetch_sequence_csv(job_uuid, group_name, raw_bioactivity)
+                if csv_bytes:
                     st.download_button(
                         label="Download CSV",
                         data=csv_bytes,
@@ -723,9 +745,6 @@ if job_result.get("status") != "SUCCESS":
     st.info("⏳ This job's results aren't ready yet. Please check back once processing has finished.")
     st.stop()
 
-# sequence_files is read by render_group_tab() as a module-level global, the
-# same way job_uuid/project already are.
-sequence_files = job_result.get("sequence_files") or {}
 grouped_data = {
     group_name: pd.DataFrame(records)
     for group_name, records in (job_result.get("stat_files") or {}).items()

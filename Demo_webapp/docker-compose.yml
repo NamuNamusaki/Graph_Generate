@@ -12,7 +12,7 @@ services:
       - db_data:/var/lib/mysql
       # Only runs on a truly empty data dir (first-ever start) -- mysql's
       # entrypoint executes every *.sql it finds here once, alphabetically.
-      - ./frontend/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+      - ./web_api/schema.sql:/docker-entrypoint-initdb.d/schema.sql
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${MYSQL_ROOT_PASSWORD}"]
       interval: 10s
@@ -20,13 +20,13 @@ services:
       retries: 5
     networks: [smartbiopep-net]
 
-  # Mock API for now (Mock_backend.py) -- swap the build block below for a
+  # Mock API for now (web_api/app.py) -- swap the build block below for a
   # real api/ service once one exists; everything else (env vars, network,
   # depends_on) stays the same since the frontend only knows it as "api".
   api:
     build:
-      context: ./frontend
-      dockerfile: Dockerfile.api
+      context: ./web_api
+      dockerfile: Dockerfile
     restart: unless-stopped
     environment:
       DB_HOST: db
@@ -34,7 +34,7 @@ services:
       DB_USER: root
       DB_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       DB_NAME: ${MYSQL_DATABASE}
-      SMARTBIOPEP_PUBLIC_APP_URL: ${SMARTBIOPEP_PUBLIC_APP_URL}
+      SMARTBIOPEP_APP_URL: ${SMARTBIOPEP_APP_URL}
     ports:
       - "8000:8000"
     depends_on:
