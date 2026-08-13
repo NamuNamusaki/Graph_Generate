@@ -83,11 +83,11 @@ if st.session_state['upload_step'] == 1:
         all_bioactivities = [format_bioac_name(name) for name in fallback]
     
     st.multiselect(
-                    "Select Bioactivities (Max 3): :red[*]",
+                    "Select Bioactivities (Max 3) :red[*]",
                     options=all_bioactivities,
                     key='bioactivities',
                     max_selections=3)
-    st.multiselect('ML applied to peptides with unknown bioactivity (Group 4) red[*]',
+    st.multiselect('ML applied to peptides with unknown bioactivity (Group 4) :red[*]',
                     options=['AMP','NP','ATHP'],
                     key='ml_models_id')
     st.divider()
@@ -96,7 +96,7 @@ if st.session_state['upload_step'] == 1:
     st.markdown('*In-silico Digestion Settings*')
     col_enz, col_miss = st.columns(2)
     with col_enz:
-        st.selectbox('select one enzyme for insilico digestion red[*]', options=['Trypsin','Pepsin'],key='enzyme_id')
+        st.selectbox('select one enzyme for insilico digestion :red[*]', options=['Trypsin','Pepsin'],key='enzyme_id')
     with col_miss:
         st.selectbox('Maximum missed cleavage sites allowed per peptide (Default: 4)',options=['0','1','2','3'],index=3,key='miss')
     st.divider()
@@ -116,9 +116,6 @@ if st.session_state['upload_step'] == 1:
     if st.button('Review Submission',type='primary',use_container_width=True):
         if not st.session_state.get('project_name').strip():
             st.error('Please fill in the Project Name.')
-            st.stop()
-        if not st.session_state.get('sample_name'):
-            st.error('Please fill in the Sample Name.')
             st.stop()
         if not st.session_state.get('bioactivities'):
             st.error('Please select at least one Bioactivity.')
@@ -217,14 +214,6 @@ elif st.session_state['upload_step'] == 2:
     with col_submit:
         if st.button('Confirm and Process',type='primary'):
             with st.spinner('Sending data to Backend...'):
-                # job_uuid is no longer generated here -- the backend now
-                # generates it (see web_api/app.py's submit_analysis()) and
-                # hands it back in the response below, the same way a real
-                # database generates its own primary/unique key on INSERT
-                # rather than accepting a client-picked one. So `payload`
-                # goes out exactly as built in Step 1, with no job_uuid field
-                # in it at all.
-
                 # 2. Attach security token
                 headers = get_auth_headers()
                 # 3. Send Request
@@ -238,16 +227,6 @@ elif st.session_state['upload_step'] == 2:
                         if not new_job_id or not new_job_uuid:
                             st.error('Backend accepted the job but did not return a job_id/job_uuid for it.')
                             st.stop()
-                        # Register this submission as its own tracked project
-                        # (keyed by the backend-assigned job_id, an internal
-                        # identifier distinct from job_uuid) instead of
-                        # overwriting flat session_state keys, so an in-flight
-                        # project isn't lost if the user comes back here to
-                        # start another one. job_uuid is stored alongside it
-                        # so later pages can address the API with the right
-                        # identifier instead of job_id.
-                        # Stored separately from api_payload since bioactivities_display
-                        # is frontend-only and was never part of the POSTed payload.
                         create_project(
                             new_job_id, payload,
                             st.session_state.get('bioactivities_display', []),

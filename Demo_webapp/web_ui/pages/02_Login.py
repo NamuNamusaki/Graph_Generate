@@ -25,8 +25,8 @@ st.markdown("Please Enter your Username and Password to Using this tool")
 
 # LOGIN FORM & API AUTHENTICATION
 with st.form("login_form"):
-    username_input = st.text_input("Username",key='username')
-    password_input = st.text_input("Password", type="password", key='password')
+    username_input = st.text_input("Username", key='login_username_input')
+    password_input = st.text_input("Password", type="password", key='login_password_input')
 
     submitted_login = st.form_submit_button("Login", type="primary")
     # ── Client-side validation (fast, no network call needed) ─────────────

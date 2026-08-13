@@ -13,6 +13,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy everything in frontend/ into the image. .dockerignore still strips
 # __pycache__, .venv, .env, .claude/, and the _test_*.py scratch scripts.
+COPY .streamlit/ .streamlit/
 COPY . .
 
 # Talk to the API over the Docker network by service name, not localhost.

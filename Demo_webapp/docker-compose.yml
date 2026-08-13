@@ -1,13 +1,13 @@
 services:
 
-  db:
+  web_db:
     image: mysql:8.0
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE}
     ports:
-      - "3306:3306"          # host access for MySQL Workbench/CLI; drop this in production
+      - "3307:3306"          # host access for MySQL Workbench/CLI; drop this in production
     volumes:
       - db_data:/var/lib/mysql
       # Only runs on a truly empty data dir (first-ever start) -- mysql's
@@ -23,13 +23,13 @@ services:
   # Mock API for now (web_api/app.py) -- swap the build block below for a
   # real api/ service once one exists; everything else (env vars, network,
   # depends_on) stays the same since the frontend only knows it as "api".
-  api:
+  web_api:
     build:
       context: ./web_api
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
-      DB_HOST: db
+      DB_HOST: web_db
       DB_PORT: 3306
       DB_USER: root
       DB_PASSWORD: ${MYSQL_ROOT_PASSWORD}
@@ -38,58 +38,27 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      db:
+      web_db:
         condition: service_healthy
     networks: [smartbiopep-net]
 
-  frontend:
+  web_ui:
     build:
-      context: ./frontend
+      context: ./web_ui
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
-      SMARTBIOPEP_API_BASE_URL: http://api:8000
+      SMARTBIOPEP_API_BASE_URL: http://web_api:8000
     ports:
       - "8501:8501"
     depends_on:
-      - api
+      - web_api
     networks: [smartbiopep-net]
-
-  # Placeholder broker for the queue. Redis is the simplest option that works
-  # with most Python task-queue libraries (Celery, RQ, arq); swap the image
-  # for rabbitmq:3-management if you'd rather use RabbitMQ/AMQP instead.
-  queue:
-    image: redis:7-alpine
-    restart: unless-stopped
-    networks: [smartbiopep-net]
-
-  # No worker code exists yet, so this is commented out rather than faked.
-  # Uncomment once there's a worker/ folder with its own Dockerfile that:
-  #   1. Connects to `queue` (Redis) to pull jobs enqueued by the api service
-  #   2. Runs the actual bioactivity-prediction pipeline
-  #   3. Writes results/updates job status via `db`, the same way db.py does
-  # worker:
-  #   build:
-  #     context: ./worker
-  #     dockerfile: Dockerfile
-  #   restart: unless-stopped
-  #   environment:
-  #     DB_HOST: db
-  #     DB_PORT: 3306
-  #     DB_USER: root
-  #     DB_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-  #     DB_NAME: ${MYSQL_DATABASE}
-  #     QUEUE_URL: redis://queue:6379/0
-  #   depends_on:
-  #     db:
-  #       condition: service_healthy
-  #     queue:
-  #       condition: service_started
-  #   networks: [smartbiopep-net]
 
 networks:
   smartbiopep-net:
     driver: bridge
+
 
 volumes:
   db_data:

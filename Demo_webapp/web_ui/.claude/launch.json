@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "mock_backend",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["Mock_backend.py"],
+      "port": 8000
+    },
+    {
+      "name": "streamlit",
+      "runtimeExecutable": "streamlit",
+      "runtimeArgs": ["run", "app.py", "--server.headless=true"],
+      "port": 8501
+    }
+  ]
+}
