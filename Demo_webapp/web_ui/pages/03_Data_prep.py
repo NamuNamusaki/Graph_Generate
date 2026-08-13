@@ -161,13 +161,6 @@ if st.session_state['upload_step'] == 1:
             "fasta_content":         fasta_content,
         }
         st.session_state['api_payload'] = api_payload
-        # Bioactivity display names are frontend-only and never sent to the
-        # backend, but they're snapshotted here (not just read later from the
-        # 'bioactivities' widget key) because Streamlit clears a widget's
-        # session_state entry once a rerun happens where that widget isn't
-        # instantiated -- Step 2 never renders the multiselect again, so by
-        # the time "Confirm and Process" triggers its own rerun, 'bioactivities'
-        # would already be gone.
         st.session_state['bioactivities_display'] = list(st.session_state['bioactivities'])
         st.session_state['display_file_name'] = fasta_name
         st.session_state['upload_step'] = 2
@@ -188,11 +181,6 @@ elif st.session_state['upload_step'] == 2:
         st.markdown(f'**Organism:**     {payload["organism"] or "-"}')
         st.divider()
         st.markdown('**Analysis Parameters**')
-        # Bioactivity display names are frontend-only (never sent to the backend),
-        # so they're read from the stable 'bioactivities_display' snapshot taken
-        # in Step 1, not from api_payload (which only carries list_bioactivities_id)
-        # and not from the 'bioactivities' widget key (which Streamlit clears
-        # once this page stops rendering that widget).
         bioactivities_display = st.session_state.get('bioactivities_display', [])
         st.markdown(f'**Bioactivities:** {", ".join(bioactivities_display) if bioactivities_display else "-"}')
         st.markdown(f'**ML Predictions:** {", ".join(payload["ml_models_id"]) if payload["ml_models_id"] else "-"}')

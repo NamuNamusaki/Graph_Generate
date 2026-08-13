@@ -64,14 +64,6 @@ RESULT_BASE_URL = os.environ.get("SMARTBIOPEP_APP_URL", "http://localhost:8501")
 
 
 def _send_completion_email(email: str, job_uuid: str) -> str:
-    """
-    STAND-IN for a real email service (e.g. SES/SendGrid). We don't have one
-    wired up in this repo, so "sending" means logging what would have gone
-    out -- the important, real part is the URL shape and that it only gets
-    sent once per job. Returns the result URL that was "emailed" so callers
-    (and GET /jobs/{job_uuid}, for local testing without a real inbox) can
-    surface it too.
-    """
     result_url = f"{RESULT_BASE_URL}?job_uuid={job_uuid}"
     print(
         f"[mock email] To: {email}\n"
@@ -83,18 +75,6 @@ def _send_completion_email(email: str, job_uuid: str) -> str:
 # -----------------------------------------------------------------------------------------
 # REAL RESULT FILES (replaces the random-data mock for summary + sequences)
 # -----------------------------------------------------------------------------------------
-# This mirrors the JOBS table in the ERD: each job row carries its own
-# `output_result_path`, set by the worker once processing finishes. The
-# frontend is expected to check that field (via GET /jobs/{job_uuid})
-# before asking for results — if it's still null, results aren't ready yet.
-#
-# We don't have a real worker or a real per-job output directory in this repo
-# (there's exactly one sample dataset, Result_Sequence/), so
-# _simulate_worker_output_path() below stands in for "the worker finished and
-# wrote its output here." Swap that one function for a real lookup (e.g. a
-# database read) once jobs actually get their own output directories — every
-# other function here already reads through output_result_path, not a
-# hardcoded folder, so nothing else needs to change.
 SAMPLE_RESULT_DIR = Path(__file__).resolve().parent / "Result_Sequence"
 
 # Matches "RankBioactivity_G1_2Enz", "RankBioactivity_G3a_2Enz", etc.
@@ -111,14 +91,7 @@ def _group_label_from_filename(stem: str) -> Optional[str]:
 
 
 def _simulate_worker_output_path(job_uuid: str) -> str:
-    """
-    STAND-IN for what a real background worker would do: write results to a
-    job-specific directory and persist that path on the job row
-    (JOBS.output_result_path in the ERD). We only have one shared sample
-    dataset checked into this repo, so every job "completes" pointing at the
-    same folder — the mechanism (job -> its own path -> its own files) is
-    what's real here, not the data.
-    """
+    """Simulates the worker writing its output to disk, and returns the"""
     return str(SAMPLE_RESULT_DIR)
 
 
@@ -148,12 +121,7 @@ def submit_analysis(payload: AnalyzePayload, authorization: Optional[str] = Head
     if not authorization:
         raise HTTPException(status_code=401, detail="Missing Token")
 
-    # job_uuid is generated HERE, not by the frontend -- the backend owns
-    # the identifier for its own resource, the same way a real DB would hand
-    # back a generated primary/unique key on INSERT rather than accepting one
-    # from the client. uuid4() is a random UUID; there's no reason for a
-    # deterministic/seeded uuid3 since nothing on the frontend needs to
-    # predict this value before the job exists.
+    # ──── GENERATE job_uuid ──────────────────────────────────────
     job_uuid = str(uuid.uuid4())
 
     user_id = _get_or_create_demo_user()
@@ -280,13 +248,7 @@ def get_job_result(job_uuid: str, authorization: Optional[str] = Header(None)):
     """
     Statistical summary for the Dashboard's charts/tables: job status/error
     plus the 4 RankBioactivity_G*_2Enz.csv files. Does NOT include peptide
-    sequence data -- that's fetched on demand, one bioactivity at a time,
-    via GET /jobs/{job_uuid}/download when the user actually clicks a
-    "Download CSV" button. Eagerly reading every sequence file on every
-    dashboard visit doesn't scale once a real job's ResultG*/ folders hold
-    more than this repo's handful of sample files, and most of them are
-    never even looked at in a given visit.
-
+    sequence data 
     Returns:
       - job_id, status, error_message: current job state. error_message is
         always present (None unless the job failed) so the frontend has one
@@ -348,11 +310,8 @@ def download_sequence_file(
     authorization: Optional[str] = Header(None),
 ):
     """
-    On-demand counterpart to GET /jobs/{job_uuid}/result: that endpoint only
-    ever returns statistics. This returns the real peptide-sequence CSV for
+    On-demand counterpart to GET /jobs/{job_uuid}/result: returns the real peptide-sequence CSV for
     exactly the one group + bioactivity the user clicked "Download" for,
-    e.g. group="Group 1", bioactivity="ACE_inhibitor" ->
-    {output_result_path}/ResultG1/ACE_inhibitor.csv, streamed back as-is.
     """
     if not authorization:
         raise HTTPException(status_code=401, detail="Missing Token")

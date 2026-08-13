@@ -177,13 +177,7 @@ if project['waiting_step'] == 1:
 elif project['waiting_step'] == 2:
     st.title('Job Status')
     st.markdown(f'**Job ID:** `{job_id}`')
-
-    # This used to be `while True: ...; time.sleep(3)`, which blocks the
-    # entire script — while it ran, this Streamlit session couldn't respond
-    # to ANY interaction (including the project switcher above, or a navbar
-    # click to go work on another project). st.fragment(run_every=...)
-    # reruns just this function on its own timer, so the rest of the page
-    # (and the session) stays responsive while this job polls in the background.
+    
     @st.fragment(run_every="3s")
     def poll_job_status(job_id=job_id):
         proj = st.session_state['projects'].get(job_id)

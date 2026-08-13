@@ -69,10 +69,7 @@ if linked_job_uuid:
             if p.get('job_uuid') == linked_job_uuid:
                 set_active_project(jid)
                 break
-    # Consume the query param so it doesn't keep overriding the project switcher
-    # below on every later rerun of this same browser session.
-    # st.query_params is an immutable object, so we convert it to a dict,
-    # remove the key, and assign the new dict back.
+
     new_query_params = st.query_params.to_dict()
     if 'job_uuid' in new_query_params:
         del new_query_params['job_uuid']
@@ -83,10 +80,7 @@ job_id, project = get_active_project()
 if job_id is None:
     st.warning("⚠️ No data found. Please go back to the Upload page and submit a sequence.")
     st.stop()
-
-# job_id (above) is the internal project-tracking identifier; job_uuid is
-# the separate, backend-assigned identifier every API call below actually
-# addresses the job by.
+# ───────── GET Job_UUID
 job_uuid = project.get('job_uuid')
 AUTH_HEADERS = get_auth_headers()
 

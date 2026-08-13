@@ -30,23 +30,7 @@ def ensure_projects_store() -> None:
 
 
 def create_project(job_id: str, api_payload: dict, bioactivities_display: list = None, job_uuid: str = None) -> None:
-    """Register a newly submitted job as its own isolated project and make it active.
-
-    `job_id` (the dict key here, and the `active_job_id` value) is the
-    backend-assigned internal identifier -- used for project tracking in the
-    UI (this store's key, the project switcher, "Job ID:" labels). It is
-    kept separate from `job_uuid`, which every subsequent API call
-    (status polling, results, notifications) actually addresses the job by.
-    Storing `job_uuid` as a sibling field here means pages only ever look up
-    the API identifier through the active project, never by (mis)using
-    `job_id` as if it were the same thing.
-
-    `bioactivities_display` is the human-readable bioactivity names shown in
-    the UI (e.g. "ACE Inhibitory"). It's kept as a sibling field, separate
-    from `api_payload`, because `api_payload` is exactly what gets POSTed to
-    the backend (list_bioactivity_id only) — the display names never go over
-    the wire.
-    """
+    """Register a newly submitted job as its own isolated project and make it active."""
     ensure_projects_store()
     st.session_state['projects'][job_id] = {
         'job_uuid': job_uuid,
