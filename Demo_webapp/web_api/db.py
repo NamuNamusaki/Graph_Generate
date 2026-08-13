@@ -3,15 +3,17 @@ MySQL connection layer for the USERS / PROJECTS / JOBS tables in schema.sql.
 
 Mirrors config.py's pattern of reading connection details from environment
 variables (so nothing is hardcoded), and exposes small, explicit CRUD
-functions rather than an ORM -- matching the rest of this codebase's style
-(Mock_backend.py talks to `mock_jobs_db` the same direct way).
+functions rather than an ORM -- matching the rest of this codebase's style.
 
-This module is NOT wired into Mock_backend.py yet. It's a standalone,
-working connection layer you can import from a real backend once you're
-ready to replace `mock_jobs_db = {}` with real persistence -- every function
-here is named and shaped to make that swap mechanical (e.g.
-create_job()/update_job_progress()/get_job_by_uuid() line up with what
-submit_analysis()/get_status() currently do in-memory).
+This module IS wired into web_api/app.py: submit_analysis() calls
+create_project()/create_job(), get_status() calls get_job_by_uuid()/
+update_job_progress(), and get_job_result()/download_sequence_file() both
+call get_job_by_uuid(). Job state (status, step_current, output_result_path,
+etc.) lives in MySQL now, not an in-memory dict -- it survives an `api`
+container restart. The one thing intentionally NOT persisted here is
+email-notification bookkeeping (which address was subscribed, whether the
+completion email fired yet); app.py keeps that in a small in-memory dict
+instead, since schema.sql's JOBS table has no columns for it.
 
 Setup:
     pip install mysql-connector-python
@@ -156,11 +158,11 @@ def create_job(
     list_step_total: list[str] = None,
 ) -> int:
     """
-    Registers a new job for a project. Equivalent to what submit_analysis()
-    in Mock_backend.py does with `mock_jobs_db[payload.job_uuid] = {...}`,
-    except job_uuid is a UNIQUE column here rather than a dict key -- a
-    duplicate job_uuid raises mysql.connector.IntegrityError instead of
-    silently overwriting the previous row.
+    Registers a new job for a project. Called by submit_analysis() in
+    web_api/app.py -- job_uuid is a UNIQUE column here, so a duplicate
+    job_uuid raises mysql.connector.IntegrityError instead of silently
+    overwriting a previous row (a plain dict keyed by job_uuid, the
+    in-memory approach this replaced, couldn't make that distinction).
     """
     with get_cursor(commit=True) as cur:
         cur.execute(
@@ -193,8 +195,8 @@ def _decode_job_row(row: Optional[dict]) -> Optional[dict]:
 
 
 def get_job_by_uuid(job_uuid: str) -> Optional[dict]:
-    """The lookup every API endpoint needs -- equivalent to
-    `mock_jobs_db.get(job_uuid)` in Mock_backend.py."""
+    """The lookup every API endpoint in web_api/app.py needs -- get_status(),
+    get_job_result(), and download_sequence_file() all call this first."""
     with get_cursor() as cur:
         cur.execute("SELECT * FROM jobs WHERE job_uuid = %s", (job_uuid,))
         return _decode_job_row(cur.fetchone())
@@ -223,9 +225,10 @@ def update_job_progress(
     worker_name: str = None,
 ) -> None:
     """
-    Updates only the fields actually passed in -- equivalent to the handful
-    of `job["..."] = ...` lines scattered through Mock_backend.py's
-    get_status(), collapsed into one call. Pass started_at_now=True /
+    Updates only the fields actually passed in -- called from web_api/app.py's
+    submit_analysis() and get_status() in place of the handful of
+    `job["..."] = ...` lines the old in-memory-dict version used, collapsed
+    into one call. Pass started_at_now=True /
     completed_at_now=True to stamp those columns with the current server
     time (matches TIMESTAMP semantics better than sending a Python-side
     timestamp across timezones).

@@ -218,7 +218,7 @@ elif st.session_state['upload_step'] == 2:
         if st.button('Confirm and Process',type='primary'):
             with st.spinner('Sending data to Backend...'):
                 # job_uuid is no longer generated here -- the backend now
-                # generates it (see Mock_backend.py's submit_analysis()) and
+                # generates it (see web_api/app.py's submit_analysis()) and
                 # hands it back in the response below, the same way a real
                 # database generates its own primary/unique key on INSERT
                 # rather than accepting a client-picked one. So `payload`

@@ -11,10 +11,8 @@ WORKDIR /app/Demo_webapp/frontend
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy everything in frontend/ into the image (Mock_backend.py, db.py,
-# schema.sql, Result_Sequence/, etc. come along too, even though this
-# container only runs app.py) -- .dockerignore still strips __pycache__,
-# .venv, .env, and the _test_*.py scratch scripts either way.
+# Copy everything in frontend/ into the image. .dockerignore still strips
+# __pycache__, .venv, .env, .claude/, and the _test_*.py scratch scripts.
 COPY . .
 
 # Talk to the API over the Docker network by service name, not localhost.

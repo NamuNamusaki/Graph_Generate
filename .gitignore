@@ -18,3 +18,4 @@ Demo_webapp/.env.example
 Demo_webapp/frontend/_test_backend_job_uuid.py
 Demo_webapp/postman/SmartBioPep.postman_collection.json
 Demo_webapp/postman/SmartBioPep.postman_environment.json
+Demo_webapp/DOCKER_CHEATSHEET.md

@@ -3,13 +3,13 @@
 --
 -- Mirrors the USERS / PROJECTS / JOBS ERD, with two deliberate corrections
 -- to field types that would otherwise conflict with how the existing Python
--- code (Mock_backend.py, state.py) actually uses these values:
+-- code (web_api/app.py, frontend/state.py) actually uses these values:
 --
 --   1. jobs.job_uuid -- the ERD marks this `binary`. Every place in the app
 --      that creates or reads a job_uuid treats it as a plain string:
---          job_uuid = str(uuid.uuid3(uuid.NAMESPACE_OID, seed))   # 03_Data_prep.py
+--          job_uuid = str(uuid.uuid4())   # web_api/app.py, submit_analysis()
 --      and it's sent as a URL query param (?job_uuid=...) and an HTTP path
---      segment (/api/status/{job_uuid}) -- both string contexts. Storing raw
+--      segment (/jobs/{job_uuid}) -- both string contexts. Storing raw
 --      BINARY(16) would require packing/unpacking on every read and write for
 --      no benefit here, so this uses CHAR(36), the standard width for a
 --      hyphenated UUID string.
@@ -70,7 +70,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     id                  BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
 
     -- API-facing identifier (see header note above) -- every endpoint in
-    -- Mock_backend.py looks jobs up by this, not by `id`.
+    -- web_api/app.py looks jobs up by this, not by `id`.
     job_uuid            CHAR(36)      NOT NULL,
 
     project_id          BIGINT UNSIGNED NOT NULL,
@@ -92,7 +92,7 @@ CREATE TABLE IF NOT EXISTS jobs (
 
     -- JSON array of pipeline step names, e.g.
     -- ["Reading Data","In silico Digestion","Bioactivity Matching","Generating Results"]
-    -- (mirrors Mock_backend.py's PIPELINE_STEPS).
+    -- (mirrors web_api/app.py's PIPELINE_STEPS).
     list_step_total     JSON          NULL,
 
     error_message       TEXT          NULL,

@@ -21,8 +21,8 @@ This repo currently ships a **mock backend** (in-memory job store, no real predi
 ```
 
 - **frontend** — Streamlit multi-page app. Never talks to MySQL directly; only calls `api` over HTTP.
-- **api** — FastAPI mock backend. Currently keeps all job state in an in-memory dict (`mock_jobs_db`), not MySQL — `db.py`/`schema.sql` exist and work standalone, but aren't called from `app.py` yet.
-- **db** — MySQL 8, schema for `users` / `projects` / `jobs`. Running via Docker, but currently idle (nothing writes to it — see [Known gaps](#known-gaps-not-yet-built)).
+- **api** — FastAPI mock backend. Job state (status, progress, results path) is persisted to MySQL via `db.py`; only email-notification bookkeeping stays in an in-memory dict (see [Known gaps](#known-gaps-not-yet-built) for why).
+- **db** — MySQL 8, schema for `users` / `projects` / `jobs`. Running via Docker and actively read/written by every job-related API call.
 - **queue** / **worker** — Redis is running as a placeholder broker; no worker code exists yet. The real bioactivity-prediction pipeline would eventually run here instead of the mock's `Result_Sequence/` sample data.
 
 ## Project structure
@@ -158,7 +158,8 @@ Form posting `username`/`password` (form-encoded, not JSON) to `POST {API_BASE_U
 ### `pages/05_Dashboard.py` — results
 On load: if the URL has `?job_uuid=...` (an emailed results link) and that job isn't already tracked in this session, fetches it fresh from the backend and registers it via `create_project()`; if already tracked, just switches to it. Either way, the query param is consumed so it doesn't override the project switcher on later reruns.
 
-- **`fetch_job_result(job_uuid)`** — the single data-fetching call for this whole page: `GET {API_BASE_URL}/jobs/{job_uuid}/result`, returns `{job_id, status, error_message, stat_files, sequence_files}`. Deliberately **not** `@st.cache_data` — the same `job_uuid` legitimately returns different data over time as the job progresses, and caching bit the earlier implementation (a completed job kept showing "not ready" because the pre-completion response had been cached). Forces re-login on a 401.
+- **`fetch_job_result(job_uuid)`** — the main data-fetching call for this page: `GET {API_BASE_URL}/jobs/{job_uuid}/result`, returns `{job_id, status, error_message, stat_files}` (statistics only, no peptide sequences). Deliberately **not** `@st.cache_data` — the same `job_uuid` legitimately returns different data over time as the job progresses, and caching bit the earlier implementation (a completed job kept showing "not ready" because the pre-completion response had been cached). Forces re-login on a 401.
+- **`fetch_sequence_csv(job_uuid, group_name, bioactivity)`** — on-demand counterpart: `GET {API_BASE_URL}/jobs/{job_uuid}/download?group=...&bioactivity=...`, called only when the user clicks "Download CSV" for one specific bioactivity, not fetched eagerly for every row on page load. Returns raw CSV bytes, or `None` (rendered as a "No File" fallback).
 - **`format_bioac_name(name)`** — same title-casing helper as Data_prep.
 - **`get_group_names(file_name)`** — extracts `"Group 3a"` etc. from a result filename via regex.
 - **`map_group_detail(group_name)`** — expands a group code to its meaning (`"Group 1"` → `"Exact Match"`, etc.).
@@ -171,7 +172,7 @@ On load: if the URL has `?job_uuid=...` (an emailed results link) and that job i
 - **`render_static_bar` / `render_static_pie`** — Matplotlib (non-interactive, image-based) versions of the same charts, for the PDF export.
 - **`_pdf_scaled_image(png_buf, target_width)`** — scales a chart PNG to fit the PDF page width while preserving aspect ratio.
 - **`generate_pdf_report(csv_paths)`** *(cached)* — builds a downloadable PDF report via ReportLab (summary table + one page per group with its bar/pie charts).
-- **`render_group_tab(group_name, group_dfs)`** — renders one "Group N" tab: a ranked, paginated (10 → 20 → 50 rows) table of bioactivities with per-row CSV download for bioactivities the user originally selected (matched against `sequence_files` returned by the API). The "PARQUET Download" column is a placeholder — always renders `-`, not implemented.
+- **`render_group_tab(group_name, group_dfs)`** — renders one "Group N" tab: a ranked, paginated (10 → 20 → 50 rows) table of bioactivities with per-row CSV download for bioactivities the user originally selected, fetched on click via `fetch_sequence_csv()`. The "PARQUET Download" column is a placeholder — always renders `-`, not implemented.
 - **`describe_bioactivity_model(code)`** — expands a short model code (`"NP"`) into a description (`"Neuropeptide model."`) via the `BIOACTIVITY_FULL_NAMES` lookup table.
 - **`generate_mock_ml_predictions(model_key, n_rows)`** *(cached)* — placeholder ML-prediction row generator.
 - **`render_ml_tab()`** — renders the "ML Prediction" tab. **Entirely mockup** — explicitly labeled as such on the page; replace once a real prediction worker exists.
@@ -183,9 +184,10 @@ Tabs rendered: Summary, Group 1, Group 2, Group 3a, Group 3b, ML Prediction.
 ## Backend (`web_api/`) — file by file
 
 ### `app.py` — FastAPI mock backend
-All job state lives in `mock_jobs_db` (plain dict, keyed by `job_uuid`, wiped on every restart) — see [Known gaps](#known-gaps-not-yet-built) for what real persistence would need.
+Job state (status, progress, `output_result_path`, etc.) is persisted to MySQL via `db.py`. Email-notification bookkeeping (subscribed address, whether the completion email already fired) stays in an in-memory dict, `job_notifications`, since `schema.sql`'s `jobs` table has no columns for it — see [Known gaps](#known-gaps-not-yet-built).
 
-- **`_next_job_id()`** — stands in for a real DB auto-increment primary key (`JOB000001`, `JOB000002`, ...).
+- **`_format_job_id(db_id)`** — turns a job row's real MySQL auto-increment `id` into the `"JOB000001"`-style label the API has always returned.
+- **`_get_or_create_demo_user()`** — looks up (or creates, on first use) a single seeded `"admin"` row in `users`, so `PROJECTS`/`JOBS` have a real `user_id` to satisfy their foreign keys. Stands in until `login()` actually authenticates against the `users` table instead of a hardcoded credential pair.
 - **`_send_completion_email(email, job_uuid)`** — logs what a real email service would have sent (no SES/SendGrid wired up), returns the result URL (`{SMARTBIOPEP_APP_URL}/Dashboard?job_uuid=...`).
 - **`_group_label_from_filename(stem)`** — `"RankBioactivity_G3a_2Enz"` → `"Group 3a"`.
 - **`_group_label_from_result_dirname(dirname)`** — `"ResultG3a"` → `"Group 3a"`.
@@ -196,21 +198,22 @@ All job state lives in `mock_jobs_db` (plain dict, keyed by `job_uuid`, wiped on
 | Method & path | Purpose | Notes |
 |---|---|---|
 | `POST /login` | Authenticate | Form-encoded `username`/`password`. Only `admin`/`password` accepted — hardcoded, no user table used. |
-| `POST /jobs` | Submit a new analysis job | Backend generates and returns both `job_id` (internal tracking) and `job_uuid` (the identifier every other call uses) — the client never invents these. |
-| `POST /notifications` | Subscribe an email to a job | 404 if the `job_uuid` doesn't exist. |
-| `GET /status/{job_uuid}` | Poll job progress | Each call advances the mock pipeline one step (real progress would come from an actual worker). Fires the completion email exactly once, only if an email was subscribed. |
-| `GET /jobs/{job_uuid}/result` | Fetch all results for a job in one call | Returns `stat_files` (per-group bioactivity counts) and `sequence_files` (per-group, per-bioactivity peptide sequences), both empty (`{}`) until the job reaches `SUCCESS`. Replaces what used to be two separate summary/download endpoints. |
+| `POST /jobs` | Submit a new analysis job | Seeds/looks up the demo user, creates a `projects` row and a `jobs` row for it, and returns `job_id` (display label, derived from the job's real DB id) and `job_uuid` (the identifier every other call uses) — the client never invents either. |
+| `POST /notifications` | Subscribe an email to a job | 404 if the `job_uuid` doesn't exist (checked via `db.get_job_by_uuid`). Stored in the in-memory `job_notifications` dict, not MySQL. |
+| `GET /jobs/{job_uuid}` | Poll job progress | Reads/updates the job row in MySQL. Each call advances the mock pipeline one step (real progress would come from an actual worker). Fires the completion email exactly once, only if an email was subscribed. |
+| `GET /jobs/{job_uuid}/result` | Fetch statistics for a job | Returns `stat_files` (per-group bioactivity counts), empty (`{}`) until the job reaches `SUCCESS`. Does **not** include peptide sequences — see `/download` below. |
+| `GET /jobs/{job_uuid}/download` | Fetch one bioactivity's peptide sequences | Query params `group` (e.g. `"Group 1"`) and `bioactivity` (raw name, e.g. `"ACE_inhibitor"`). On-demand, one CSV at a time. 409 if the job isn't `SUCCESS` yet, 400 if the resolved path would escape the job's own result directory. |
 
 ### `db.py` — MySQL connection layer
-**Not called from `app.py` yet** — this is a complete, working, standalone module ready to swap in for `mock_jobs_db` once you're ready (see [Known gaps](#known-gaps-not-yet-built)).
+Wired into `app.py`: `submit_analysis()` calls `create_project()`/`create_job()`, `get_status()` calls `get_job_by_uuid()`/`update_job_progress()`, and `get_job_result()`/`download_sequence_file()` both call `get_job_by_uuid()`. Job data now survives an `api` container restart — see [Known gaps](#known-gaps-not-yet-built) for what's still in-memory only.
 
 - **`get_cursor(commit=False)`** — context manager yielding a dict-cursor from a pooled connection (`mysql.connector.pooling`, not one shared connection — FastAPI serves requests concurrently). Rolls back and re-raises on any exception; always returns the connection to the pool.
-- **`create_user` / `get_user_by_username` / `get_user`** — USERS table CRUD.
-- **`create_project` / `get_project` / `list_projects_for_user`** — PROJECTS table CRUD.
-- **`create_job`** — inserts a new job row; equivalent to `mock_jobs_db[job_uuid] = {...}`, except a duplicate `job_uuid` raises a real `IntegrityError` instead of silently overwriting.
+- **`create_user` / `get_user_by_username` / `get_user`** — USERS table CRUD. `create_user`/`get_user_by_username` back `_get_or_create_demo_user()` in `app.py`.
+- **`create_project` / `get_project` / `list_projects_for_user`** — PROJECTS table CRUD. `create_project` is called once per job submission.
+- **`create_job`** — inserts a new job row, called from `submit_analysis()`; a duplicate `job_uuid` raises a real `IntegrityError` (the in-memory dict this replaced could only silently overwrite).
 - **`_decode_job_row(row)`** — decodes the JSON columns (`list_bioactivity_id`, `list_step_total`) mysql-connector returns as strings, into Python lists.
-- **`get_job_by_uuid` / `list_jobs_for_project`** — JOBS table reads.
-- **`update_job_progress(job_uuid, ...)`** — updates only the fields actually passed in; collapses the handful of `job["..."] = ...` lines `app.py`'s `get_status()` currently does in-memory into one call.
+- **`get_job_by_uuid` / `list_jobs_for_project`** — JOBS table reads. `get_job_by_uuid` is the lookup every job-related endpoint in `app.py` calls first.
+- **`update_job_progress(job_uuid, ...)`** — updates only the fields actually passed in; called from `submit_analysis()` (flip a fresh job from `PENDING` to `RUNNING`) and `get_status()` (advance `step_current`/mark `SUCCESS`).
 - **`init_schema()`** — applies `schema.sql` against the configured MySQL server (`python3 db.py --init-schema`); equivalent to `mysql -u ... -p ... < schema.sql`.
 
 ### `schema.sql` — database schema
@@ -224,13 +227,14 @@ Three InnoDB tables mirroring the project's ERD, with two deliberate corrections
 
 ## Testing
 
-A Postman collection covering every endpoint (with auto-chained auth token/job_uuid and a self-looping status-poll request) lives in `postman/`. See `postman/SmartBioPep.postman_collection.json` + `.postman_environment.json`.
+A Postman collection covering every endpoint (with auto-chained auth token/job_uuid and a self-looping status-poll request) lives in `postman/`. See `postman/SmartBioPep.postman_collection.json` + `.postman_environment.json`. Matches the current API contract (no `/api` prefix, `GET /jobs/{job_uuid}` for status) — last verified with `newman run` against a live `web_api/app.py`: 24/24 assertions passing across login → submit → notify → poll-to-SUCCESS → fetch-result, plus 401/404 negative-path checks.
 
-> **Heads up:** that collection was built against an earlier version of the API (`/api/login`, `/api/results/{job_uuid}/summary`, `/api/results/{job_uuid}/download`). The API has since dropped the `/api` prefix and consolidated results into `GET /jobs/{job_uuid}/result` (see the endpoint table above) — the collection needs a matching update before it'll pass again.
+Separately, `submit_analysis()`/`get_status()`/`get_job_result()`/`download_sequence_file()`'s DB-wiring logic (this file's `db.py` calls) was verified against a fake in-memory stand-in for `db.py` — same function signatures/return shapes, driven through the full login → submit → notify → poll-to-SUCCESS → result → download flow via FastAPI's `TestClient`, since no live MySQL server is available in every environment this gets checked out into. Real MySQL still needs `docker compose up` (or `python3 db.py --init-schema` against a local server) to actually exercise `schema.sql` itself.
 
 ## Known gaps (not yet built)
 
-- **`db.py` isn't wired into `app.py`** — `db`/MySQL run in Docker Compose but sit idle; job state still lives in the in-memory `mock_jobs_db` dict and is lost on every restart.
+- **Single hardcoded demo user** — `_get_or_create_demo_user()` seeds/reuses one `"admin"` row so `PROJECTS`/`JOBS` have a real `user_id` to point at, since `login()` doesn't actually authenticate against the `users` table yet. Every submitted job (from anyone who logs in with the one hardcoded credential pair) is attached to this same user row — there's no real multi-user separation until login is wired to real accounts.
+- **Email-notification bookkeeping isn't persisted** — `job_notifications` (subscribed address, whether the completion email fired) is an in-memory dict in `app.py`, not a MySQL table; `schema.sql`'s `jobs` table has no columns for it. A subscribed email is forgotten if the `api` container restarts mid-job, even though the job's own status/results now survive that restart.
 - **No real worker or ML pipeline** — every job "completes" pointing at the same sample `Result_Sequence/` directory; `queue` (Redis) runs but nothing publishes or consumes from it yet.
 - **ML Prediction tab is a full mockup** — random data generated client-side, explicitly labeled as such.
 - **"PARQUET Download" column** on the Dashboard's group tabs is a placeholder (always renders `-`).
