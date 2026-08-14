@@ -156,6 +156,7 @@ def create_job(
     input_fasta_path: str = None,
     list_bioactivity_id: list[int] = None,
     list_step_total: list[str] = None,
+    extra_params: dict = None,
 ) -> int:
     """
     Registers a new job for a project. Called by submit_analysis() in
@@ -163,14 +164,19 @@ def create_job(
     job_uuid raises mysql.connector.IntegrityError instead of silently
     overwriting a previous row (a plain dict keyed by job_uuid, the
     in-memory approach this replaced, couldn't make that distinction).
+
+    extra_params: the submission-form fields with no dedicated column
+    (organism, enzyme_id, miss, sample_name) -- stored as one JSON blob so
+    get_job_result() can hand them back to the Dashboard even when it's a
+    different browser session than the one that submitted the job.
     """
     with get_cursor(commit=True) as cur:
         cur.execute(
             """
             INSERT INTO jobs
                 (job_uuid, project_id, status, input_fasta_path,
-                 list_bioactivity_id, list_step_total, step_current)
-            VALUES (%s, %s, 'PENDING', %s, %s, %s, 0)
+                 list_bioactivity_id, list_step_total, extra_params, step_current)
+            VALUES (%s, %s, 'PENDING', %s, %s, %s, %s, 0)
             """,
             (
                 job_uuid,
@@ -178,6 +184,7 @@ def create_job(
                 input_fasta_path,
                 json.dumps(list_bioactivity_id) if list_bioactivity_id is not None else None,
                 json.dumps(list_step_total) if list_step_total is not None else None,
+                json.dumps(extra_params) if extra_params is not None else None,
             ),
         )
         return cur.lastrowid
@@ -185,10 +192,11 @@ def create_job(
 
 def _decode_job_row(row: Optional[dict]) -> Optional[dict]:
     """JSON columns come back from mysql-connector as strings -- decode them
-    into Python lists so callers get the same shape they'd build in Python."""
+    into Python lists/dicts so callers get the same shape they'd build in
+    Python."""
     if row is None:
         return None
-    for key in ("list_bioactivity_id", "list_step_total"):
+    for key in ("list_bioactivity_id", "list_step_total", "extra_params"):
         if row.get(key):
             row[key] = json.loads(row[key])
     return row
@@ -235,7 +243,7 @@ def update_job_progress(
 
     Example (mirrors what get_status() does when a job finishes):
         update_job_progress(
-            job_uuid, status="SUCCESS", step_current=4,
+            job_uuid, status="COMPLETED", step_current=4,
             output_result_path="/data/results/JOB000001",
             completed_at_now=True,
         )

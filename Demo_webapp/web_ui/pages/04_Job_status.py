@@ -214,7 +214,14 @@ elif project['waiting_step'] == 2:
                     status_html = status_badge('● Completed', 'completed')
                 elif current_status == 'FAILED':
                     st.markdown(status_badge('● Failed', 'failed'), unsafe_allow_html=True)
-                    error_msg = data.get("message", "An unknown error occurred on the server.")
+                    # GET /jobs/{job_uuid} doesn't return this today -- the
+                    # simulated pipeline in web_api/app.py never actually
+                    # fails a job, so this branch is unreachable in the
+                    # current backend. Kept (and named to match the field
+                    # get_job_result() already uses) so it's correct the
+                    # moment failure handling is added server-side, instead
+                    # of silently reading a field name the API never sends.
+                    error_msg = data.get("error_message", "An unknown error occurred on the server.")
                     st.error(f"❌ **Analysis Failed:** {error_msg}")
                     if st.button("Return to Upload Page", key=f'ret_failed_{job_id}'):
                         st.session_state['projects'].pop(job_id, None)

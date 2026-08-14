@@ -3,9 +3,16 @@ import pandas as pd
 import json
 import requests
 import os
+from typing import Optional
 from config import API_BASE_URL
 from auth import require_login, get_auth_headers
 from state import ensure_projects_store, create_project, reset_upload_form
+
+# -------- Sequence validation limits -----------
+# Applies to BOTH the uploaded file and pasted text, so the two input
+# methods behave identically.
+MAX_FASTA_FILE_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB
+MAX_SEQUENCE_COUNT = 500                       # max FASTA records (">" entries) per submission
 
 st.set_page_config(page_title="Upload Sample", layout="centered")
 
@@ -29,6 +36,82 @@ def process_fasta_txt(raw_text:str) -> str:
     if not cleaned.startswith('>'):
         cleaned = f'>Pasted_sequence_1\n{cleaned}'
     return cleaned
+
+def _format_size(num_bytes: int) -> str:
+    """Human-readable byte size for error messages, e.g. 10485760 -> '10.0 MB'."""
+    size = float(num_bytes)
+    for unit in ('B', 'KB', 'MB', 'GB'):
+        if unit == 'B':
+            if size < 1024:
+                return f"{int(size)} B"
+        elif size < 1024 or unit == 'GB':
+            return f"{size:.1f} {unit}"
+        size /= 1024
+
+# Standard 20 canonical amino acids + common IUPAC ambiguity codes:
+# B=Asp/Asn, Z=Glu/Gln, X=any, J=Leu/Ile, U=selenocysteine, O=pyrrolysine.
+_VALID_AA_CHARS = set("ACDEFGHIKLMNPQRSTVWYBZXJUO")
+
+def validate_fasta_format(content: str) -> Optional[str]:
+    """
+    Structural + alphabet FASTA validation, run on content that's already
+    been auto-wrapped with a header if it was a bare sequence (see
+    process_fasta_txt()).
+
+    Checks:
+      - there's at least one '>' record
+      - every '>' header is followed by at least one non-empty sequence line
+        (catches empty/truncated records)
+      - every sequence is made up only of recognized amino acid letters (the
+        20 canonical residues plus common IUPAC ambiguity codes) -- catches
+        non-protein content (DNA/RNA, numbers, stray punctuation) slipping
+        through as if it were a valid sequence
+      - the number of '>' records doesn't exceed MAX_SEQUENCE_COUNT
+
+    Returns an error message string if invalid, or None if the content is
+    well-formed. Stops at the first problem found, same as before.
+    """
+    lines = [ln for ln in content.splitlines() if ln.strip() != '']
+    if not lines:
+        return 'No sequence data found.'
+
+    def _check_sequence(record_num: int, header: str, seq_chars: str) -> Optional[str]:
+        if not seq_chars:
+            return f"Invalid FASTA format: record #{record_num} ('{header}') has no sequence data."
+        bad_chars = sorted(set(seq_chars.upper()) - _VALID_AA_CHARS)
+        if bad_chars:
+            return (
+                f"Record #{record_num} ('{header}') has invalid character(s) for a protein "
+                f"sequence: {', '.join(bad_chars)}"
+            )
+        return None
+
+    record_count = 0
+    current_header = ''
+    current_seq_chars = ''
+    for line in lines:
+        if line.startswith('>'):
+            if record_count > 0:
+                err = _check_sequence(record_count, current_header, current_seq_chars)
+                if err:
+                    return err
+            record_count += 1
+            current_header = line[1:].strip() or f'record {record_count}'
+            current_seq_chars = ''
+        else:
+            current_seq_chars += line.strip()
+
+    err = _check_sequence(record_count, current_header, current_seq_chars)
+    if err:
+        return err
+
+    if record_count > MAX_SEQUENCE_COUNT:
+        return (
+            f"Too many sequences: this submission has {record_count} FASTA records, "
+            f"but the maximum allowed is {MAX_SEQUENCE_COUNT}."
+        )
+
+    return None
 
 @st.cache_data
 def load_bioactivity_map():
@@ -133,17 +216,43 @@ if st.session_state['upload_step'] == 1:
         if file_input and text_input:
             st.error('Please provide either a file OR pasted text, not both.')
             st.stop()
+
         fasta_content = ''
         fasta_name = 'Pasted_sequence.fasta'
+        raw_size_bytes = 0
 
         if file_input:
-            fasta_content = file_input.getvalue().decode('utf-8',errors='ignore')
+            raw_size_bytes = file_input.size
+            fasta_content = file_input.getvalue().decode('utf-8', errors='ignore')
             fasta_name = file_input.name
         elif text_input:
-            fasta_content = process_fasta_txt(text_input)
+            raw_size_bytes = len(text_input.encode('utf-8'))
+            fasta_content = text_input
 
         if not fasta_content:
             st.error('Please provide either a valid FASTA file OR pasted text.')
+            st.stop()
+
+        # -------- Size check (uploaded file OR pasted text) ----------------------
+        if raw_size_bytes > MAX_FASTA_FILE_SIZE_BYTES:
+            st.error(
+                f"⚠️ Your sequence data is {_format_size(raw_size_bytes)}, which is over the "
+                f"{_format_size(MAX_FASTA_FILE_SIZE_BYTES)} limit. Please provide a smaller file."
+            )
+            st.stop()
+
+        # -------- Auto-wrap a bare (headerless) sequence with a placeholder ------
+        # -------- FASTA header -- same normalization for both input methods. -----
+        fasta_content = process_fasta_txt(fasta_content)
+
+        if not fasta_content:
+            st.error('No sequence data found. Please check your file.')
+            st.stop()
+
+        # -------- Structural FASTA validation + sequence-count cap ---------------
+        format_error = validate_fasta_format(fasta_content)
+        if format_error:
+            st.error(f'⚠️ {format_error}')
             st.stop()
 
         selected_ids =[name_to_id[name] for name in st.session_state['bioactivities'] if name in name_to_id]
@@ -188,7 +297,7 @@ elif st.session_state['upload_step'] == 2:
         st.markdown(f'**Insilico Digestion Settings**')
         st.markdown(f'**Cleavage Enzyme:**       {payload["enzyme_id"]}')
         st.markdown(f'**Missed Cleavage Sites:** {payload["miss"]}')
-        st.markdown(f'**Sequence File:**         {st.session_state["display_file_name"]}')        
+        st.markdown(f'**Sequence File:**         {st.session_state["display_file_name"]}')
         st.markdown('**Description**')
         st.info(payload['description'] or '-')
     

@@ -153,7 +153,7 @@ Form posting `username`/`password` (form-encoded, not JSON) to `POST {API_BASE_U
 - **`render_job_status_table(step_current, list_step_total, step_elapsed)`** — builds the HTML table of pipeline steps with per-step status/elapsed time.
 
 **Step 1**: collects a notification email, POSTs it to `{API_BASE_URL}/notifications`.
-**Step 2**: `poll_job_status()`, wrapped in `@st.fragment(run_every="3s")` — reruns just this function on a timer instead of blocking the whole page (an earlier version used `while True: sleep(3)`, which froze the whole session). Polls `GET {API_BASE_URL}/status/{job_uuid}`, updates the progress bar/step table, and once `status == SUCCESS`, shows a "View your result" button to Dashboard plus the emailed results link (echoed here since this demo has no real inbox to check).
+**Step 2**: `poll_job_status()`, wrapped in `@st.fragment(run_every="3s")` — reruns just this function on a timer instead of blocking the whole page (an earlier version used `while True: sleep(3)`, which froze the whole session). Polls `GET {API_BASE_URL}/jobs/{job_uuid}`, updates the progress bar/step table, and once `status == COMPLETED`, shows a "View your result" button to Dashboard plus the emailed results link (echoed here since this demo has no real inbox to check).
 
 ### `pages/05_Dashboard.py` — results
 On load: if the URL has `?job_uuid=...` (an emailed results link) and that job isn't already tracked in this session, fetches it fresh from the backend and registers it via `create_project()`; if already tracked, just switches to it. Either way, the query param is consumed so it doesn't override the project switcher on later reruns.
@@ -201,8 +201,8 @@ Job state (status, progress, `output_result_path`, etc.) is persisted to MySQL v
 | `POST /jobs` | Submit a new analysis job | Seeds/looks up the demo user, creates a `projects` row and a `jobs` row for it, and returns `job_id` (display label, derived from the job's real DB id) and `job_uuid` (the identifier every other call uses) — the client never invents either. |
 | `POST /notifications` | Subscribe an email to a job | 404 if the `job_uuid` doesn't exist (checked via `db.get_job_by_uuid`). Stored in the in-memory `job_notifications` dict, not MySQL. |
 | `GET /jobs/{job_uuid}` | Poll job progress | Reads/updates the job row in MySQL. Each call advances the mock pipeline one step (real progress would come from an actual worker). Fires the completion email exactly once, only if an email was subscribed. |
-| `GET /jobs/{job_uuid}/result` | Fetch statistics for a job | Returns `stat_files` (per-group bioactivity counts), empty (`{}`) until the job reaches `SUCCESS`. Does **not** include peptide sequences — see `/download` below. |
-| `GET /jobs/{job_uuid}/download` | Fetch one bioactivity's peptide sequences | Query params `group` (e.g. `"Group 1"`) and `bioactivity` (raw name, e.g. `"ACE_inhibitor"`). On-demand, one CSV at a time. 409 if the job isn't `SUCCESS` yet, 400 if the resolved path would escape the job's own result directory. |
+| `GET /jobs/{job_uuid}/result` | Fetch statistics for a job | Returns `stat_files` (per-group bioactivity counts) and `extra_params` (organism/enzyme_id/miss/sample_name as submitted), `stat_files` empty (`{}`) until the job reaches `COMPLETED`. Does **not** include peptide sequences — see `/download` below. |
+| `GET /jobs/{job_uuid}/download` | Fetch one bioactivity's peptide sequences | Query params `group` (e.g. `"Group 1"`) and `bioactivity` (raw name, e.g. `"ACE_inhibitor"`). On-demand, one CSV at a time. 409 if the job isn't `COMPLETED` yet, 400 if the resolved path would escape the job's own result directory. |
 
 ### `db.py` — MySQL connection layer
 Wired into `app.py`: `submit_analysis()` calls `create_project()`/`create_job()`, `get_status()` calls `get_job_by_uuid()`/`update_job_progress()`, and `get_job_result()`/`download_sequence_file()` both call `get_job_by_uuid()`. Job data now survives an `api` container restart — see [Known gaps](#known-gaps-not-yet-built) for what's still in-memory only.
@@ -210,10 +210,10 @@ Wired into `app.py`: `submit_analysis()` calls `create_project()`/`create_job()`
 - **`get_cursor(commit=False)`** — context manager yielding a dict-cursor from a pooled connection (`mysql.connector.pooling`, not one shared connection — FastAPI serves requests concurrently). Rolls back and re-raises on any exception; always returns the connection to the pool.
 - **`create_user` / `get_user_by_username` / `get_user`** — USERS table CRUD. `create_user`/`get_user_by_username` back `_get_or_create_demo_user()` in `app.py`.
 - **`create_project` / `get_project` / `list_projects_for_user`** — PROJECTS table CRUD. `create_project` is called once per job submission.
-- **`create_job`** — inserts a new job row, called from `submit_analysis()`; a duplicate `job_uuid` raises a real `IntegrityError` (the in-memory dict this replaced could only silently overwrite).
-- **`_decode_job_row(row)`** — decodes the JSON columns (`list_bioactivity_id`, `list_step_total`) mysql-connector returns as strings, into Python lists.
+- **`create_job`** — inserts a new job row, called from `submit_analysis()`; a duplicate `job_uuid` raises a real `IntegrityError` (the in-memory dict this replaced could only silently overwrite). Also accepts `extra_params` (organism/enzyme_id/miss/sample_name), stored as one JSON blob since these have no dedicated columns.
+- **`_decode_job_row(row)`** — decodes the JSON columns (`list_bioactivity_id`, `list_step_total`, `extra_params`) mysql-connector returns as strings, into Python lists/dicts.
 - **`get_job_by_uuid` / `list_jobs_for_project`** — JOBS table reads. `get_job_by_uuid` is the lookup every job-related endpoint in `app.py` calls first.
-- **`update_job_progress(job_uuid, ...)`** — updates only the fields actually passed in; called from `submit_analysis()` (flip a fresh job from `PENDING` to `RUNNING`) and `get_status()` (advance `step_current`/mark `SUCCESS`).
+- **`update_job_progress(job_uuid, ...)`** — updates only the fields actually passed in; called from `submit_analysis()` (flip a fresh job from `PENDING` to `RUNNING`) and `get_status()` (advance `step_current`/mark `COMPLETED`).
 - **`init_schema()`** — applies `schema.sql` against the configured MySQL server (`python3 db.py --init-schema`); equivalent to `mysql -u ... -p ... < schema.sql`.
 
 ### `schema.sql` — database schema
@@ -221,15 +221,15 @@ Three InnoDB tables mirroring the project's ERD, with two deliberate corrections
 
 - **`users`** — `id`, `username` (unique), `email` (unique), `password_hash`.
 - **`projects`** — `id`, `user_id` (FK → users, cascade), `project_name`, `description`, timestamps.
-- **`jobs`** — `id`, `job_uuid` (unique), `project_id` (FK → projects, cascade), `status` (`PENDING`/`RUNNING`/`SUCCESS`/`FAILED`), `input_fasta_path`, `list_bioactivity_id` (JSON), `step_current`, `list_step_total` (JSON), `error_message`, `submitted_at`/`started_at`/`completed_at`, `output_result_path`, `updated_by_worker`, `worker_name`.
+- **`jobs`** — `id`, `job_uuid` (unique), `project_id` (FK → projects, cascade), `status` (`PENDING`/`RUNNING`/`COMPLETED`/`FAILED`), `input_fasta_path`, `list_bioactivity_id` (JSON), `extra_params` (JSON — organism/enzyme_id/miss/sample_name), `step_current`, `list_step_total` (JSON), `error_message`, `submitted_at`/`started_at`/`completed_at`, `output_result_path`, `updated_by_worker`, `worker_name`.
 
 ---
 
 ## Testing
 
-A Postman collection covering every endpoint (with auto-chained auth token/job_uuid and a self-looping status-poll request) lives in `postman/`. See `postman/SmartBioPep.postman_collection.json` + `.postman_environment.json`. Matches the current API contract (no `/api` prefix, `GET /jobs/{job_uuid}` for status) — last verified with `newman run` against a live `web_api/app.py`: 24/24 assertions passing across login → submit → notify → poll-to-SUCCESS → fetch-result, plus 401/404 negative-path checks.
+A Postman collection covering every endpoint (with auto-chained auth token/job_uuid and a self-looping status-poll request) lives in `postman/`. See `postman/SmartBioPep.postman_collection.json` + `.postman_environment.json`. Matches the current API contract (no `/api` prefix, `GET /jobs/{job_uuid}` for status) — last verified with `newman run` against a live `web_api/app.py`: 24/24 assertions passing across login → submit → notify → poll-to-COMPLETED → fetch-result, plus 401/404 negative-path checks. **Note:** the collection's "05 - Get Consolidated Job Result" test script still asserts a `sequence_files` property the API no longer returns (that data now comes from the separate `GET /jobs/{job_uuid}/download` endpoint) — that one assertion is stale and will fail until updated.
 
-Separately, `submit_analysis()`/`get_status()`/`get_job_result()`/`download_sequence_file()`'s DB-wiring logic (this file's `db.py` calls) was verified against a fake in-memory stand-in for `db.py` — same function signatures/return shapes, driven through the full login → submit → notify → poll-to-SUCCESS → result → download flow via FastAPI's `TestClient`, since no live MySQL server is available in every environment this gets checked out into. Real MySQL still needs `docker compose up` (or `python3 db.py --init-schema` against a local server) to actually exercise `schema.sql` itself.
+Separately, `submit_analysis()`/`get_status()`/`get_job_result()`/`download_sequence_file()`'s DB-wiring logic (this file's `db.py` calls) was verified against a fake in-memory stand-in for `db.py` — same function signatures/return shapes, driven through the full login → submit → notify → poll-to-COMPLETED → result → download flow via FastAPI's `TestClient`, since no live MySQL server is available in every environment this gets checked out into. Real MySQL still needs `docker compose up` (or `python3 db.py --init-schema` against a local server) to actually exercise `schema.sql` itself.
 
 ## Known gaps (not yet built)
 

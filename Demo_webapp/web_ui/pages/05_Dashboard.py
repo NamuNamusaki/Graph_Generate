@@ -373,11 +373,19 @@ def build_summary_rows(group_dfs):
     Shared builder for the Project Detail & Statistical Summary table,
     reused by the on-screen table and the HTML/PDF report exports.
     """
-    api_payload = project.get('api_payload', {})
+    # Prefer what the backend actually persisted for this job (extra_params,
+    # from GET /jobs/{job_uuid}/result -- see web_api/app.py's
+    # submit_analysis()/get_job_result()) over the local, session-only
+    # api_payload. The DB copy is what makes these show up correctly even
+    # when this job was opened via the emailed results link in a fresh
+    # session that never submitted it itself (api_payload would be {} there).
+    # Falling back to api_payload still covers jobs created before this
+    # extra_params column existed.
+    extra_params = job_result.get('extra_params') or project.get('api_payload', {})
     summary_data = {
-        'Organism': api_payload.get('organism') or 'N/A',
-        'Clevage Enzyme': str(api_payload.get('enzyme_id') or '-'),
-        'Missed Cleavages': str(api_payload.get('miss', '-')),
+        'Organism': extra_params.get('organism') or 'N/A',
+        'Clevage Enzyme': str(extra_params.get('enzyme_id') or '-'),
+        'Missed Cleavages': str(extra_params.get('miss', '-')),
     }
 
     for group_name, df in group_dfs.items():
@@ -733,7 +741,7 @@ if job_result.get("error_message"):
     st.error(f"❌ Analysis failed: {job_result['error_message']}")
     st.stop()
 
-if job_result.get("status") != "SUCCESS":
+if job_result.get("status") != "COMPLETED" or not job_result.get("stat_files"):
     # output_result_path is still null for this job, i.e. the (simulated)
     # worker hasn't finished writing results yet.
     st.info("⏳ This job's results aren't ready yet. Please check back once processing has finished.")

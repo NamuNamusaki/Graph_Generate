@@ -75,7 +75,7 @@ CREATE TABLE IF NOT EXISTS jobs (
 
     project_id          BIGINT UNSIGNED NOT NULL,
 
-    status              ENUM('PENDING', 'RUNNING', 'SUCCESS', 'FAILED')
+    status              ENUM('PENDING', 'RUNNING', 'COMPLETED', 'FAILED')
                                        NOT NULL DEFAULT 'PENDING',
 
     -- Path to the submitted FASTA file on disk (the app currently sends the
@@ -87,6 +87,15 @@ CREATE TABLE IF NOT EXISTS jobs (
     -- JSON array of bioactivity ids, e.g. "[1,4,7]" -- matches
     -- payload["list_bioactivities_id"] as sent by 03_Data_prep.py.
     list_bioactivity_id JSON          NULL,
+
+    -- Bundles the rest of the submission form that has nowhere else to live:
+    -- {"organism": ..., "enzyme_id": ..., "miss": ..., "sample_name": ...}.
+    -- Before this column existed, these values only ever lived in the
+    -- submitting browser's st.session_state, so opening a job's results in a
+    -- different session (e.g. the emailed results link on another device)
+    -- showed them as blank/"N/A". One JSON column instead of four separate
+    -- ones, matching the list_bioactivity_id/list_step_total pattern above.
+    extra_params        JSON          NULL,
 
     step_current        INT           NULL DEFAULT 0,
 

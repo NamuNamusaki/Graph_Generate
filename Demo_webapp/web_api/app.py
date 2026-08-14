@@ -27,6 +27,82 @@ PIPELINE_STEPS = ["Reading Data", "In silico Digestion", "Bioactivity Matching",
 
 job_notifications: Dict[str, dict] = {}
 
+# -----------------------------------------------------------------------------------------
+# FASTA VALIDATION -- server-side backstop for the same rules 03_Data_prep.py
+# already enforces in the browser. A direct API call (Postman, curl, a
+# malicious client) bypasses the frontend entirely, so submit_analysis()
+# below re-checks fasta_content before it ever reaches the DB/worker.
+# -----------------------------------------------------------------------------------------
+MAX_FASTA_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB -- matches the frontend's limit
+MAX_FASTA_SEQUENCES = 500
+
+# Standard 20 canonical amino acids + common IUPAC ambiguity codes:
+# B=Asp/Asn, Z=Glu/Gln, X=any, J=Leu/Ile, U=selenocysteine, O=pyrrolysine.
+_VALID_AA_CHARS = set("ACDEFGHIKLMNPQRSTVWYBZXJUO")
+
+
+def validate_fasta_content(fasta_content: str) -> list[str]:
+    """
+    Checks fasta_content against the project's upload rules: proper FASTA
+    structure (every record is a '>header' line followed by at least one
+    non-empty sequence line), sequence lines made up only of recognized
+    amino acid letters, no more than MAX_FASTA_SEQUENCES records, and no
+    more than MAX_FASTA_SIZE_BYTES total. Returns a list of human-readable
+    problems found -- empty list means the input is valid. Collects every
+    problem in one pass instead of stopping at the first, same as the
+    frontend's validate_fasta() in 03_Data_prep.py.
+    """
+    errors: list[str] = []
+
+    size_bytes = len(fasta_content.encode("utf-8"))
+    if size_bytes > MAX_FASTA_SIZE_BYTES:
+        errors.append(
+            f"FASTA content is {size_bytes / (1024 * 1024):.1f} MB, over the "
+            f"{MAX_FASTA_SIZE_BYTES // (1024 * 1024)} MB limit."
+        )
+
+    lines = fasta_content.splitlines()
+    if not lines or not lines[0].strip().startswith(">"):
+        errors.append("Content doesn't start with a FASTA header ('>...') -- not a valid FASTA file.")
+        return errors  # nothing more useful to check structurally
+
+    records: list[tuple[str, list[str]]] = []
+    current_header = None
+    current_seq_lines: list[str] = []
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line.startswith(">"):
+            if current_header is not None:
+                records.append((current_header, current_seq_lines))
+            current_header = line
+            current_seq_lines = []
+        else:
+            current_seq_lines.append(line)
+    if current_header is not None:
+        records.append((current_header, current_seq_lines))
+
+    if not records:
+        errors.append("No sequence records found.")
+        return errors
+
+    if len(records) > MAX_FASTA_SEQUENCES:
+        errors.append(f"Contains {len(records)} sequences, over the {MAX_FASTA_SEQUENCES}-sequence limit.")
+
+    for idx, (header, seq_lines) in enumerate(records, start=1):
+        if not seq_lines:
+            errors.append(f"Record {idx} ({header[:40]}) has a header but no sequence.")
+            continue
+        seq = "".join(seq_lines).upper()
+        bad_chars = sorted(set(seq) - _VALID_AA_CHARS)
+        if bad_chars:
+            errors.append(
+                f"Record {idx} ({header[:40]}) has invalid character(s) for a protein sequence: {', '.join(bad_chars)}"
+            )
+
+    return errors
+
 
 def _format_job_id(db_id: int) -> str:
     """Turns a job row's real MySQL auto-increment id into the same
@@ -121,6 +197,13 @@ def submit_analysis(payload: AnalyzePayload, authorization: Optional[str] = Head
     if not authorization:
         raise HTTPException(status_code=401, detail="Missing Token")
 
+    # Re-validate the FASTA content server-side -- 03_Data_prep.py already
+    # checks this in the browser, but a request that skips the frontend
+    # (Postman, curl, script) would otherwise reach the DB/worker unchecked.
+    fasta_errors = validate_fasta_content(payload.fasta_content)
+    if fasta_errors:
+        raise HTTPException(status_code=422, detail={"message": "Invalid FASTA input", "errors": fasta_errors})
+
     # ──── GENERATE job_uuid ──────────────────────────────────────
     job_uuid = str(uuid.uuid4())
 
@@ -136,6 +219,19 @@ def submit_analysis(payload: AnalyzePayload, authorization: Optional[str] = Head
         description=extra_fields.get("description"),
     )
 
+    # Everything from the submission form that doesn't have its own column
+    # (organism, enzyme_id, miss, sample_name) -- persisted as one JSON blob
+    # so the Dashboard can still show these even when it's opened in a
+    # session that never submitted the job itself (e.g. the emailed results
+    # link on a different device). Previously these only lived in the
+    # submitting browser's st.session_state and showed up blank otherwise.
+    extra_params = {
+        "organism": extra_fields.get("organism"),
+        "enzyme_id": extra_fields.get("enzyme_id"),
+        "miss": extra_fields.get("miss"),
+        "sample_name": payload.sample_name,
+    }
+
     # input_fasta_path stays null: the raw sequence text is sent inline in
     # this request rather than written to a file first (see the matching
     # note in schema.sql's header) -- a real worker would write it to disk
@@ -146,6 +242,7 @@ def submit_analysis(payload: AnalyzePayload, authorization: Optional[str] = Head
         input_fasta_path=None,
         list_bioactivity_id=payload.list_bioactivities_id,
         list_step_total=PIPELINE_STEPS,
+        extra_params=extra_params,
     )
     # create_job() always inserts with status='PENDING' (schema.sql's
     # default) -- immediately advance it to RUNNING so behavior matches
@@ -198,22 +295,22 @@ def get_status(job_uuid: str, authorization: Optional[str] = Header(None)):
     step_current = row["step_current"]
     status = row["status"]
     output_result_path = row["output_result_path"]
-    already_success = status == "SUCCESS"
+    already_completed = status == "COMPLETED"
 
     # Simulate progress: Move forward one step every time Streamlit asks
     if step_current < len(list_step_total):
         step_current += 1
         db.update_job_progress(job_uuid, step_current=step_current)
 
-    # If it reaches the end, mark it as SUCCESS and (simulating the worker)
+    # If it reaches the end, mark it as COMPLETED and (simulating the worker)
     # write the output_result_path that the frontend should now check for.
-    # Guarded by already_success so a job that's already SUCCESS doesn't
+    # Guarded by already_completed so a job that's already COMPLETED doesn't
     # get its completed_at timestamp re-stamped on every later poll.
     if step_current >= len(list_step_total):
-        status = "SUCCESS"
+        status = "COMPLETED"
         if not output_result_path:
             output_result_path = _simulate_worker_output_path(job_uuid)
-        if not already_success:
+        if not already_completed:
             db.update_job_progress(
                 job_uuid,
                 status=status,
@@ -236,7 +333,7 @@ def get_status(job_uuid: str, authorization: Optional[str] = Header(None)):
         "status": status,
         "step_current": step_current,
         "list_step_total": list_step_total,
-        "output_result_path": output_result_path,  # null until SUCCESS
+        "output_result_path": output_result_path,  # null until COMPLETED
         "result_url": result_url,  # null until the email has gone out
     }
 
@@ -255,8 +352,12 @@ def get_job_result(job_uuid: str, authorization: Optional[str] = Header(None)):
         place to check instead of parsing HTTP status codes for it.
       - stat_files: {group_label: [{"Bioactivity", "nPepSeq"}, ...]}, read
         from this job's RankBioactivity_G*_2Enz.csv files.
+      - extra_params: {"organism", "enzyme_id", "miss", "sample_name"} as
+        submitted with this job (see create_job()'s extra_params column) --
+        lets the Dashboard show these correctly even in a session that
+        didn't submit the job itself.
 
-    stat_files is empty ({}) until the job actually reaches SUCCESS (i.e.
+    stat_files is empty ({}) until the job actually reaches COMPLETED (i.e.
     output_result_path is set) -- the frontend should treat that the same
     way it used to treat the old endpoint's 409: "still processing," not an
     error. authorization/existence problems (missing token, unknown job,
@@ -297,6 +398,7 @@ def get_job_result(job_uuid: str, authorization: Optional[str] = Header(None)):
         "status": row["status"],
         "error_message": row["error_message"],
         "stat_files": stat_files,
+        "extra_params": row.get("extra_params") or {},
     }
 
 # -----------------------------------------------------------------------------------------
@@ -324,7 +426,7 @@ def download_sequence_file(
     if not output_path:
         raise HTTPException(
             status_code=409,
-            detail="Job results are not ready yet. Wait for status to reach SUCCESS before requesting a download.",
+            detail="Job results are not ready yet. Wait for status to reach COMPLETED before requesting a download.",
         )
 
     job_output_dir = Path(output_path).resolve()
