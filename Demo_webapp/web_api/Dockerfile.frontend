@@ -1,0 +1,29 @@
+# SmartBioPep mock API container (web_api/app.py).
+#
+# This is the mock FastAPI backend -- in-memory job store, no real worker or
+# ML pipeline behind it yet. Swap it for a real API service later; the image
+# name ("api") and everything docker-compose.yml expects from it (port 8000,
+# DB_*/SMARTBIOPEP_APP_URL env vars) can stay the same.
+#
+# Build context is web_api/:
+#   docker build -t smartbiopep-api -f web_api/Dockerfile web_api
+
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+# So mock job results (Result_Sequence/*.csv) and completion emails link back
+# to something reachable; override per-environment via docker-compose/.env.
+ENV SMARTBIOPEP_APP_URL=http://localhost:8501
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/docs')" || exit 1
+
+CMD ["uvicorn", "app_frontend:app", "--host", "0.0.0.0", "--port", "8000"]

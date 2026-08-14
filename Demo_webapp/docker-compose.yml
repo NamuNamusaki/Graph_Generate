@@ -26,7 +26,8 @@ services:
   web_api:
     build:
       context: ./web_api
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile${DEV_MODE}
+      network: host # Needed when build at the internal server
     restart: unless-stopped
     environment:
       DB_HOST: web_db
@@ -46,6 +47,7 @@ services:
     build:
       context: ./web_ui
       dockerfile: Dockerfile
+      network: host # Needed when build at the internal server
     restart: unless-stopped
     environment:
       SMARTBIOPEP_API_BASE_URL: http://web_api:8000
