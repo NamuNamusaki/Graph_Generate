@@ -179,7 +179,7 @@ def _simulate_worker_output_path(job_uuid: str) -> str:
 def login(username: str = Form(...), password: str = Form(...)):
     if username == "admin" and password == "password":
         return {"access_token": "fake_mock_jwt_token_12345"}
-    raise HTTPException(status_code=401, detail="Invalid credentials")
+    raise HTTPException(status_code=401, detail="Invalid credentials_frontend")
 
 # -----------------------------------------------------------------------------------------
 # 2. UPLOAD & SUBMISSION (03_Data_prep.py)
