@@ -19,7 +19,7 @@ st.set_page_config(page_title="Upload Sample", layout="centered")
 require_login()
 ensure_projects_store()
 
-# Helper function
+# ------------ Helper function -----------------
 def format_bioac_name(name):
     """Title-cases a bioactivity name, replacing underscores with spaces."""
     if pd.isna(name):
@@ -55,21 +55,7 @@ _VALID_AA_CHARS = set("ACDEFGHIKLMNPQRSTVWYBZXJUO")
 def validate_fasta_format(content: str) -> Optional[str]:
     """
     Structural + alphabet FASTA validation, run on content that's already
-    been auto-wrapped with a header if it was a bare sequence (see
-    process_fasta_txt()).
-
-    Checks:
-      - there's at least one '>' record
-      - every '>' header is followed by at least one non-empty sequence line
-        (catches empty/truncated records)
-      - every sequence is made up only of recognized amino acid letters (the
-        20 canonical residues plus common IUPAC ambiguity codes) -- catches
-        non-protein content (DNA/RNA, numbers, stray punctuation) slipping
-        through as if it were a valid sequence
-      - the number of '>' records doesn't exceed MAX_SEQUENCE_COUNT
-
-    Returns an error message string if invalid, or None if the content is
-    well-formed. Stops at the first problem found, same as before.
+    been auto-wrapped with a header if it was a bare sequence (see process_fasta_txt()).
     """
     lines = [ln for ln in content.splitlines() if ln.strip() != '']
     if not lines:

@@ -644,17 +644,12 @@ def render_group_tab(group_name,group_dfs):
 # and CSV result files produced by the worker/API job.
 # -------------------------------------------------------------------------
 # Maps each short bioactivity code (as shown in the "Model Name" column) to
-# its full, human-readable name -- e.g. NP -> "Neuropeptide", AMP ->
-# "Antimicrobial". Kept as one lookup table instead of hand-typing a full
-# description string per model, so the short code and its expansion can
-# never drift out of sync, and adding a new model later only needs one
-# dictionary entry rather than a new hardcoded sentence.
+# its full, human-readable name.
 BIOACTIVITY_FULL_NAMES = {
     "ATHP": "Antihypertensive",
     "AMP": "Antimicrobial",
     "NP": "Neuropeptide",
 }
-
 
 def describe_bioactivity_model(code: str) -> str:
     """Expands a short bioactivity code into the description shown below its
@@ -664,7 +659,6 @@ def describe_bioactivity_model(code: str) -> str:
     crashing the page."""
     full_name = BIOACTIVITY_FULL_NAMES.get(code, code)
     return f"{full_name} model."
-
 
 MODEL_INFO = [
     {

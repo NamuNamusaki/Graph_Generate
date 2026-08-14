@@ -263,10 +263,6 @@ elif project['waiting_step'] == 2:
             st.success('Analysis Complete — Your Data is Ready')
             result_url = proj.get('result_url')
             if result_url:
-                # In a real deployment this link only ever arrives by email;
-                # it's echoed here too since this demo has no real inbox to
-                # check. Opening it (in this same browser, or after signing
-                # back in) re-verifies login before showing any results.
                 st.info(f"📧 We emailed a results link to **{proj['noti_email']}**: {result_url}")
             if st.button('View your result', type='primary', use_container_width=True, key=f'view_result_{job_id}'):
                 st.switch_page('pages/05_Dashboard.py')
