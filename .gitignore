@@ -1,20 +1,23 @@
-.agents/skills/developing-with-streamlit
-CLAUDE.md
-Demo_webapp/frontend/_test_multiproject.py
-Demo_webapp/.env.example
-Demo_webapp/frontend/_test_backend_job_uuid.py
-
-
-Demo_webapp/frontend/state.py
-
+# General ignores
 **/__pycache__/
-**/postman
-**/.claude
-
+_test_?.py
 # Ignore all docx and pdf files
 **.docx
 **.pdf
-.agents/
 
+# Tool-specific ignores
+**/postman
+**/.claude
+
+# Project-specific ignores
+# Ignore the entire .agents directory
+.agents/
+CLAUDE.md
+
+# Demo_webapp specific ignores
+# It's common to ignore the actual .env file, but keep .env.example
+Demo_webapp/frontend/_test_multiproject.py
+Demo_webapp/frontend/_test_backend_job_uuid.py
+Demo_webapp/frontend/state.py
 Demo_webapp/DOCKER_CHEATSHEET.md
 Demo_webapp/Postman_API_Testing_Guide.md
