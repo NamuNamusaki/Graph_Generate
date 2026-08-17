@@ -36,6 +36,11 @@ services:
       DB_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       DB_NAME: ${MYSQL_DATABASE}
       SMARTBIOPEP_APP_URL: ${SMARTBIOPEP_APP_URL}
+      # The single login account -- auth.py seeds it into MySQL at startup
+      # and refuses to start without APP_PASSWORD. See .env
+      APP_USERNAME: ${APP_USERNAME}
+      APP_PASSWORD: ${APP_PASSWORD}
+      APP_EMAIL: ${APP_EMAIL}
     ports:
       - "8000:8000"
     depends_on:

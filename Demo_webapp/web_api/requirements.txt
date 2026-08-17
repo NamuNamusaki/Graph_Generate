@@ -8,3 +8,7 @@ pydantic
 uvicorn
 python-multipart
 mysql-connector-python
+# --- authentication (auth.py) ---
+# bcrypt: password hashing. Session tokens are plain random strings
+# (secrets.token_urlsafe), so no JWT library is needed.
+bcrypt

@@ -36,11 +36,17 @@ USE smartbiopep;
 -- -----------------------------------------------------------------------------
 -- USERS
 -- -----------------------------------------------------------------------------
+-- password_hash holds a bcrypt hash produced by auth.hash_password() --
+-- never a plain-text password. 255 chars is far more than bcrypt's 60, but
+-- leaves room to migrate to argon2 later without another schema change.
+-- All three columns are NOT NULL now that authentication is real: a user
+-- row with no username or no password hash could never be logged into.
 CREATE TABLE IF NOT EXISTS users (
     id              BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    username        VARCHAR(150)  NULL,
-    email           VARCHAR(255)  NULL,
-    password_hash   VARCHAR(255)  NULL,
+    username        VARCHAR(150)  NOT NULL,
+    email           VARCHAR(255)  NOT NULL,
+    password_hash   VARCHAR(255)  NOT NULL,
+    created_at      TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uq_users_username (username),
     UNIQUE KEY uq_users_email (email)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

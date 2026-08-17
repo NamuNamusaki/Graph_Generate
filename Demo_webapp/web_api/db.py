@@ -68,17 +68,6 @@ def _get_pool() -> pooling.MySQLConnectionPool:
 
 @contextmanager
 def get_cursor(commit: bool = False):
-    """
-    Yields a dict-returning cursor from a pooled connection, and always
-    closes both the cursor and the connection (back to the pool) afterward.
-    Pass commit=True for INSERT/UPDATE/DELETE; left False (default) for
-    read-only SELECTs so nothing is ever committed by accident.
-
-    Usage:
-        with get_cursor(commit=True) as cur:
-            cur.execute("INSERT INTO users (...) VALUES (...)", (...))
-            new_id = cur.lastrowid
-    """
     conn = _get_pool().get_connection()
     cur = conn.cursor(dictionary=True)
     try:
@@ -117,6 +106,16 @@ def get_user(user_id: int) -> Optional[dict]:
     with get_cursor() as cur:
         cur.execute("SELECT * FROM users WHERE id = %s", (user_id,))
         return cur.fetchone()
+
+
+def update_user_password_hash(user_id: int, password_hash: str) -> None:
+    """Replaces a user's stored password hash. Called by auth.ensure_app_user()
+    when APP_PASSWORD in .env no longer matches what's in the database."""
+    with get_cursor(commit=True) as cur:
+        cur.execute(
+            "UPDATE users SET password_hash = %s WHERE id = %s",
+            (password_hash, user_id),
+        )
 
 
 # -----------------------------------------------------------------------------------------
@@ -158,18 +157,7 @@ def create_job(
     list_step_total: list[str] = None,
     extra_params: dict = None,
 ) -> int:
-    """
-    Registers a new job for a project. Called by submit_analysis() in
-    web_api/app.py -- job_uuid is a UNIQUE column here, so a duplicate
-    job_uuid raises mysql.connector.IntegrityError instead of silently
-    overwriting a previous row (a plain dict keyed by job_uuid, the
-    in-memory approach this replaced, couldn't make that distinction).
 
-    extra_params: the submission-form fields with no dedicated column
-    (organism, enzyme_id, miss, sample_name) -- stored as one JSON blob so
-    get_job_result() can hand them back to the Dashboard even when it's a
-    different browser session than the one that submitted the job.
-    """
     with get_cursor(commit=True) as cur:
         cur.execute(
             """
@@ -203,10 +191,19 @@ def _decode_job_row(row: Optional[dict]) -> Optional[dict]:
 
 
 def get_job_by_uuid(job_uuid: str) -> Optional[dict]:
-    """The lookup every API endpoint in web_api/app.py needs -- get_status(),
-    get_job_result(), and download_sequence_file() all call this first."""
+    """The lookup every API endpoint in web_api/app_frontend.py needs --
+    get_status(), get_job_result(), and download_sequence_file() all call
+    this first."""
     with get_cursor() as cur:
-        cur.execute("SELECT * FROM jobs WHERE job_uuid = %s", (job_uuid,))
+        cur.execute(
+            """
+            SELECT j.*, p.user_id AS owner_user_id
+            FROM jobs j
+            JOIN projects p ON p.id = j.project_id
+            WHERE j.job_uuid = %s
+            """,
+            (job_uuid,),
+        )
         return _decode_job_row(cur.fetchone())
 
 
@@ -217,7 +214,6 @@ def list_jobs_for_project(project_id: int) -> list[dict]:
             (project_id,),
         )
         return [_decode_job_row(r) for r in cur.fetchall()]
-
 
 def update_job_progress(
     job_uuid: str,
@@ -232,22 +228,7 @@ def update_job_progress(
     updated_by_worker: str = None,
     worker_name: str = None,
 ) -> None:
-    """
-    Updates only the fields actually passed in -- called from web_api/app.py's
-    submit_analysis() and get_status() in place of the handful of
-    `job["..."] = ...` lines the old in-memory-dict version used, collapsed
-    into one call. Pass started_at_now=True /
-    completed_at_now=True to stamp those columns with the current server
-    time (matches TIMESTAMP semantics better than sending a Python-side
-    timestamp across timezones).
-
-    Example (mirrors what get_status() does when a job finishes):
-        update_job_progress(
-            job_uuid, status="COMPLETED", step_current=4,
-            output_result_path="/data/results/JOB000001",
-            completed_at_now=True,
-        )
-    """
+    
     sets: list[str] = []
     params: list[Any] = []
 
@@ -287,7 +268,6 @@ def update_job_progress(
             params,
         )
 
-
 # -----------------------------------------------------------------------------------------
 # ONE-OFF SETUP HELPER
 # -----------------------------------------------------------------------------------------
@@ -310,7 +290,6 @@ def init_schema() -> None:
         cur.close()
     finally:
         conn.close()
-
 
 if __name__ == "__main__":
     import sys
