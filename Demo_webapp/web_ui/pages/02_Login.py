@@ -48,9 +48,12 @@ with st.form("login_form"):
                             st.error('Authentication failed: No token received, Please contact support')
                             st.stop()
 
-                        # Save credentials and token to session state
+                        # Save credentials and token to session state.
+                        # The token is issued fresh per login and is only
+                        # valid until the API restarts -- pages should handle
+                        # a later 401 by sending the user back here.
                         st.session_state['logged_in'] = True
-                        st.session_state['username'] = username_input.strip()
+                        st.session_state['username'] = data.get('username', username_input.strip())
                         st.session_state['access_token'] = token
                         st.success('Login Successful Redirecting...')
 
