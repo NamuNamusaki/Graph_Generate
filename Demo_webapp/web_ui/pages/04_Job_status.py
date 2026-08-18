@@ -15,7 +15,10 @@ job_id, project = get_active_project()
 if job_id is None:
     st.error("⚠️ No active analysis job found in memory.")
     st.info("Please return to the Upload page to submit a new sequence.")
-    if st.button("Go to Upload Page", type="primary"):
+    # Secondary so it picks up the navbar-green styling in assets/style.css,
+    # matching the other in-page navigation buttons ("Edit Detail",
+    # "Return to Upload Page", "See more").
+    if st.button("Go to Upload Page", type='primary'):
         st.switch_page("pages/03_Data_prep.py")
     st.stop()
 

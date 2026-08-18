@@ -1,0 +1,533 @@
+/* ==========================================================================
+   SmartBioPep — app-wide Streamlit theme overrides
+   ==========================================================================
+
+   Loaded once by app.py (load_css()), which runs on every page, so
+   everything here applies app-wide. Keep page-specific styling in section 9
+   (gated behind a page marker) rather than scattering it through the file.
+
+   HOW TO EDIT THIS FILE
+     - Changing a colour?      Edit section 1 only. Values used in more than
+                               one place are variables; genuine one-offs stay
+                               inline next to the rule that uses them.
+     - Adding a navbar rule?   Section 8, under the matching sub-section.
+     - Adding page styling?    Section 9, following the .page-dashboard
+                               pattern (marker class + :has() gate).
+
+   Sections are ordered from lowest to highest specificity, so later rules
+   intentionally win over earlier ones.
+
+   CONTENTS
+     1. Design tokens (:root)
+     2. Streamlit chrome — hide built-in UI
+     3. Page layout
+     4. Typography — page content text
+     5. Surfaces — containers, alerts, tables, progress
+     6. Form controls — inputs, selects, focus states
+     7. Buttons
+     8. Navbar
+        8.1 Container & layout
+        8.2 Logo
+        8.3 Nav pill links
+        8.4 Username
+        8.5 Logout button
+     9. Page-specific — Result Dashboard
+   ========================================================================== */
+
+
+/* ==========================================================================
+   1. DESIGN TOKENS
+   --------------------------------------------------------------------------
+   Every colour used in more than one place lives here. Change the brand
+   green in one line and it updates everywhere it's referenced.
+   ========================================================================== */
+:root {
+    /* --- Brand greens -----------------------------------------------------
+       Two distinct greens, kept deliberately separate (confirmed intentional):
+         button  -- fill colour for primary/submit buttons
+         accent  -- input focus rings, multiselect pills, progress bar
+       Unify them later by pointing both at the same value. */
+    --brand-green-button:       #50854C;
+    --brand-green-button-hover: #6F9562;
+    --brand-green-accent:       #50854C;
+
+    /* Secondary buttons reuse the navbar green (--nav-bg) as their fill;
+       this is just its hover shade. */
+    --secondary-btn-hover: #6F9562;
+
+    /* Light green fill for selected multiselect items -- see section 6. */
+    --tag-bg: #D3E6D2;
+
+    /* --- Neutrals --------------------------------------------------------- */
+    --color-white:  #FFFFFF;   /* page/sidebar/form backgrounds, button text */
+    --color-text:   #1A1A1A;   /* body copy and input text */
+    --color-border: #D9E8D9;   /* input borders, bordered-container edges */
+
+    /* --- Navbar ----------------------------------------------------------- */
+    --nav-bg:        #043915;
+    --nav-text:      #FFFDF9;  /* logo, username, pill links, logout */
+    --nav-text-soft: #F0F4F0;  /* generic text inside the navbar */
+    --logo-bg:       rgba(0, 0, 0, 0.35);
+    --pill-bg:       rgba(255, 255, 255, 0.12);
+    --pill-bg-hover: rgba(255, 255, 255, 0.22);
+    --pill-h:        2.1rem;
+    --pill-radius:   6px;
+
+    /* --- Form controls ----------------------------------------------------
+       Coincidentally the same value as --nav-text-soft; kept as its own
+       token so changing the input background can't alter navbar text. */
+    --input-bg: #F0F4F0;
+}
+
+/* ==========================================================================
+   2. STREAMLIT CHROME — hide built-in UI
+   ========================================================================== */
+[data-testid="stToolbar"]    { display: none !important; }
+[data-testid="stHeader"]     { display: none !important; }
+[data-testid="stDecoration"] { display: none !important; }
+
+/* ==========================================================================
+   3. PAGE LAYOUT
+   ========================================================================== */
+.stApp {
+    background-color: var(--color-white) !important;
+}
+
+/* Full-bleed content area with the default top padding removed, so the
+   sticky navbar sits flush against the top of the page. */
+.block-container {
+    padding-top:   0rem !important;
+    padding-left:  2rem !important;
+    padding-right: 2rem !important;
+    width:         100% !important;
+    max-width:     100% !important;
+}
+
+/* ==========================================================================
+   4. TYPOGRAPHY — page content text
+   --------------------------------------------------------------------------
+   Scoped to .block-container so the navbar, which renders outside it, keeps
+   its own light-on-dark colours (section 8).
+   ========================================================================== */
+.block-container,
+.block-container p,
+.block-container label,
+.block-container span {
+    color: var(--color-text) !important;
+}
+
+/* ==========================================================================
+   5. SURFACES — containers, alerts, tables, progress
+   ========================================================================== */
+[data-testid="stSidebar"],
+[data-testid="stForm"] {
+    background-color: var(--color-white) !important;
+}
+
+/* Streamlit bordered container, e.g. st.container(border=True) */
+[data-testid="stVerticalBlockBorderWrapper"] {
+    background-color: #FAFAFA !important;   /* one-off: subtle grey surface */
+    border-color:     var(--color-border) !important;
+}
+
+[data-testid="stAlert"] {
+    background-color: #F8FAF8 !important;   /* one-off: faint green tint */
+}
+
+[data-testid="stDataFrame"] thead {
+    background-color: #E8F0E8 !important;   /* one-off: table header green */
+}
+
+[data-testid="stProgressBar"] > div > div {
+    background-color: var(--brand-green-accent) !important;
+}
+
+/* ==========================================================================
+   6. FORM CONTROLS — inputs, selects, focus states
+   ========================================================================== */
+
+/* Text/area/select fields */
+.stTextInput input,
+.stTextArea textarea,
+.stSelectbox [data-baseweb="select"] div,
+.stMultiSelect [data-baseweb="select"] div {
+    background-color: var(--input-bg) !important;
+    color:            var(--color-text) !important;
+    border-color:     var(--color-border) !important;
+}
+
+/* BaseWeb's own input wrappers */
+[data-baseweb="input"],
+[data-baseweb="textarea"],
+[data-baseweb="base-input"] {
+    background-color: var(--color-white) !important;
+    color:            var(--color-text) !important;
+}
+
+/* Outer container div around inputs */
+.stTextInput > div[data-baseweb="form-control"],
+.stTextInput > div > div,
+.stTextArea  > div[data-baseweb="form-control"],
+.stTextArea  > div > div {
+    background-color: var(--color-white) !important;
+}
+
+.stTextInput input::placeholder,
+.stTextArea textarea::placeholder {
+    color:   #9E9E9E !important;   /* one-off: placeholder grey */
+    opacity: 1 !important;
+}
+
+.stTextInput input:focus,
+.stTextArea textarea:focus {
+    border-color: var(--brand-green-accent) !important;
+    box-shadow:   0 0 0 1px var(--brand-green-accent) !important;
+    outline:      none !important;
+}
+
+/* --------------------------------------------------------------------------
+   SELECTED-ITEM PILLS ("Abaecin ×", "Acanthoscurrin ×", ...)
+   --------------------------------------------------------------------------
+   These are the chips shown inside the box after picking a bioactivity or an
+   ML model. Their dark green comes from Streamlit's own theme, NOT from this
+   file: .streamlit/config.toml sets
+
+       primaryColor = "#27712a"
+
+   and Streamlit hands that to BaseWeb, which uses it as the multiselect tag
+   background. Changing primaryColor there would recolour the pills, but it
+   would also change checkboxes, sliders, radio buttons and links -- so the
+   pills are overridden here instead, leaving primaryColor for everything else.
+
+   Two things these rules have to beat:
+
+     1. Streamlit's generated theme colour  -> handled with !important.
+     2. The first rule in this section,
+        `.stMultiSelect [data-baseweb="select"] div`  (specificity 0,2,1),
+        which paints EVERY nested div in a multiselect with the input
+        background and near-black text. BaseWeb builds each pill as a wrapper
+        with an inner div holding the label, so that rule reaches inside the
+        pill. Beating it needs specificity above (0,2,1) -- the selectors
+        below sit at (0,3,0), which wins on the class/attribute count alone
+        and does not depend on source order.
+
+   Each rule is written in two forms because the wrapper carries a class in
+   some Streamlit versions and a data-testid in others; listing both means
+   the styling applies either way. */
+.stMultiSelect [data-baseweb="select"] [data-baseweb="tag"],
+[data-testid="stMultiSelect"] [data-baseweb="select"] [data-baseweb="tag"] {
+    background-color: var(--tag-bg) !important;          /* light green */
+    color:            var(--color-text) !important;      /* near-black label */
+    border:           1px solid var(--brand-green-accent) !important;
+    border-radius:    var(--pill-radius) !important;
+}
+
+/* Children: keep the label dark and let the pill's own fill show through,
+   instead of inheriting the input background from the generic rule. */
+.stMultiSelect [data-baseweb="select"] [data-baseweb="tag"] *,
+[data-testid="stMultiSelect"] [data-baseweb="select"] [data-baseweb="tag"] * {
+    background-color: transparent !important;
+    color:            var(--color-text) !important;
+}
+
+/* The pill's "×" remove icon -- fill, not color, because it's an SVG. */
+.stMultiSelect [data-baseweb="select"] [data-baseweb="tag"] svg,
+[data-testid="stMultiSelect"] [data-baseweb="select"] [data-baseweb="tag"] svg {
+    fill: var(--color-text) !important;
+}
+
+/* Hover on the "×" -- darken slightly so it reads as interactive. */
+.stMultiSelect [data-baseweb="select"] [data-baseweb="tag"] svg:hover,
+[data-testid="stMultiSelect"] [data-baseweb="select"] [data-baseweb="tag"] svg:hover {
+    fill: var(--brand-green-accent) !important;
+}
+
+
+/* ==========================================================================
+   7. BUTTONS
+   ========================================================================== */
+
+/* White label text on every button we fill with green.
+   --------------------------------------------------------------------------
+   Streamlit renders the two button types into DIFFERENT wrappers:
+
+       st.button(...)               -> <div class="stButton">
+       st.form_submit_button(...)   -> <div class="stFormSubmitButton">
+
+   Both wrappers must be listed. Missing .stFormSubmitButton is what made the
+   Login button's label render near-black: the button itself got its green
+   fill from the `button[kind="primaryFormSubmit"]` rule below, but the label
+   lives in a nested <p>, and with no rule claiming it the generic
+   `.block-container p` rule in section 4 (colour #1A1A1A) won instead.
+
+   The nested `*`, `p` and `span` selectors matter for the same reason --
+   `.stButton button p` scores (0,1,2) and beats `.block-container p` at
+   (0,1,1), whereas a rule on the <button> alone would not.
+
+   NOT included: st.download_button (.stDownloadButton). Those keep
+   Streamlit's default light background, so white text would be invisible. */
+.stButton button,
+.stButton button *,
+.stButton button p,
+.stButton button span,
+.stFormSubmitButton button,
+.stFormSubmitButton button *,
+.stFormSubmitButton button p,
+.stFormSubmitButton button span {
+    color:       var(--color-white) !important;
+    font-weight: 500 !important;
+}
+
+/* Primary / form-submit buttons */
+button[kind="primary"],
+button[kind="primaryFormSubmit"] {
+    background-color: var(--brand-green-button) !important;
+    color:            var(--color-white) !important;
+    font-weight:      700 !important;
+    border:           none !important;
+    border-radius:    var(--pill-radius) !important;
+    transition:       background-color 0.15s ease !important;
+}
+
+/* Previously repeated the base background, so hovering did nothing.
+   Now darkens on hover to match the transition declared above. */
+button[kind="primary"]:hover,
+button[kind="primaryFormSubmit"]:hover {
+    background-color: var(--brand-green-button-hover) !important;
+    color:            var(--color-white) !important;
+    font-weight:      700 !important;
+    border:           none !important;
+}
+
+/* Secondary buttons -- "Edit Detail", "See more", "Return to Upload Page",
+   "Go to Upload Page". Filled with the same green as the navigation bar
+   (--nav-bg) so they read as part of the same design language.
+
+   This also fixes an invisibility bug: they used to keep Streamlit's light
+   default background while the rule above forced their label white, so the
+   text was white-on-near-white.
+
+   The navbar's own Logout button is a secondary button too, but section 8.5
+   restyles it as a translucent nav pill. That rule has equal specificity and
+   comes LATER in this file, so it wins -- which is why navbar rules live
+   after the generic button rules.
+
+   Note the wrapper pairing: kind="secondary" only ever appears inside
+   .stButton, and kind="secondaryFormSubmit" only inside .stFormSubmitButton.
+   Pairing them the other way round produces a selector that can never
+   match anything. */
+.stButton button[kind="secondary"],
+.stFormSubmitButton button[kind="secondaryFormSubmit"] {
+    background-color: var(--nav-bg) !important;
+    color:            var(--color-white) !important;
+    border:           none !important;
+    border-radius:    var(--pill-radius) !important;
+    transition:       background-color 0.15s ease !important;
+}
+.stButton button[kind="secondary"]:hover,
+.stFormSubmitButton button[kind="secondaryFormSubmit"]:hover {
+    background-color: var(--secondary-btn-hover) !important;
+    color:            var(--color-white) !important;
+    border:           none !important;
+}
+
+
+/* ==========================================================================
+   8. NAVBAR
+   --------------------------------------------------------------------------
+   Everything scoped to .st-key-topnav, the container key app.py renders the
+   nav into. All navbar rules live in this section -- container styling and
+   text-colour overrides used to sit at opposite ends of the file.
+   ========================================================================== */
+
+/* --- 8.1 Container & layout ---------------------------------------------- */
+.st-key-topnav {
+    background-color: var(--nav-bg);
+    border-radius:    8px;
+    padding:          0.55rem 1.5rem;
+    margin:           0 -2rem 1.5rem -2rem;   /* cancels .block-container padding */
+    box-shadow:       0 2px 10px rgba(0, 0, 0, 0.30);
+    position:         sticky;
+    top:              0;
+    z-index:          99999;
+
+    /* Override Streamlit's inherited text colours inside the nav */
+    --text-color:         var(--nav-text) !important;
+    --body-text-color:    var(--nav-text) !important;
+    --default-text-color: var(--nav-text) !important;
+}
+
+/* Catch-all: any text rendered inside the navbar */
+.st-key-topnav *,
+.st-key-topnav p,
+.st-key-topnav span,
+.st-key-topnav label,
+.st-key-topnav div,
+.st-key-topnav [data-testid="stMarkdownContainer"],
+.st-key-topnav [data-testid="stMarkdownContainer"] p,
+.st-key-topnav [data-testid="stMarkdownContainer"] span {
+    color:       var(--nav-text-soft) !important;
+    font-weight: 500 !important;
+}
+
+.st-key-topnav > div[data-testid="stVerticalBlockBorderWrapper"],
+.st-key-topnav > div[data-testid="stVerticalBlock"] {
+    width: 100%;
+}
+
+/* Single row, no wrapping, items vertically centred */
+.st-key-topnav div[data-testid="stHorizontalBlock"] {
+    display:     flex !important;
+    align-items: center !important;
+    flex-wrap:   nowrap !important;
+    gap:         0.4rem !important;
+    width:       100% !important;
+}
+
+/* Columns shrink to their content instead of splitting evenly */
+.st-key-topnav div[data-testid="stColumn"] {
+    flex:            0 0 auto !important;
+    width:           auto !important;
+    min-width:       0 !important;
+    padding:         0 !important;
+    display:         flex !important;
+    align-items:     center !important;
+    justify-content: center !important;
+}
+
+/* Flexible gap that pushes everything after it to the right */
+.st-key-topnav .st-key-navspacer {
+    flex:  1 1 auto !important;
+    width: auto !important;
+}
+
+/* --- 8.2 Logo ------------------------------------------------------------ */
+.st-key-topnav .navbar-logo {
+    color:            var(--nav-text) !important;
+    font-weight:      700;
+    font-size:        1rem;
+    background-color: var(--logo-bg);
+    padding:          0 1rem;
+    border-radius:    var(--pill-radius);
+    height:           var(--pill-h);
+    display:          flex;
+    align-items:      center;
+    justify-content:  center;
+    white-space:      nowrap;
+    letter-spacing:   1px;
+    user-select:      none;
+    box-sizing:       border-box;
+}
+
+/* --- 8.3 Nav pill links -------------------------------------------------- */
+.st-key-topnav div[data-testid="stPageLink"] {
+    background-color: var(--pill-bg);
+    border:           none;
+    border-radius:    var(--pill-radius);
+    height:           var(--pill-h);
+    display:          flex !important;
+    align-items:      center !important;
+    transition:       background-color 0.15s ease;
+    overflow:         hidden;
+}
+.st-key-topnav div[data-testid="stPageLink"]:hover {
+    background-color: var(--pill-bg-hover);
+}
+
+/* Make the whole pill clickable, not just the text */
+.st-key-topnav div[data-testid="stPageLink"] a {
+    display:         flex !important;
+    align-items:     center !important;
+    padding:         0 1rem !important;
+    height:          100% !important;
+    text-decoration: none !important;
+    background:      transparent !important;
+}
+.st-key-topnav div[data-testid="stPageLink"] p {
+    color:       var(--nav-text) !important;
+    font-weight: 500 !important;
+    font-size:   0.9rem !important;
+    margin:      0 !important;
+    white-space: nowrap !important;
+}
+
+/* Hide Streamlit's default page-link icon */
+.st-key-topnav div[data-testid="stPageLink"] svg {
+    display: none !important;
+}
+
+/* --- 8.4 Username -------------------------------------------------------- */
+.navbar-username,
+.navbar-username p,
+.navbar-username span {
+    color:       var(--nav-text) !important;
+    font-weight: 500;
+    font-size:   0.9rem;
+    white-space: nowrap;
+    padding:     0 0.5rem;
+    height:      var(--pill-h);
+    display:     flex;
+    align-items: center;
+    opacity:     0.85;
+}
+
+/* --- 8.5 Logout button ---------------------------------------------------
+   Styled to match the nav pills rather than Streamlit's default secondary
+   button, so it blends into the navbar. */
+.st-key-topnav button[kind="secondary"],
+.st-key-topnav button[kind="secondaryFormSubmit"] {
+    background:    var(--pill-bg) !important;
+    color:         var(--nav-text) !important;
+    border:        none !important;
+    border-radius: var(--pill-radius) !important;
+    font-weight:   500 !important;
+    font-size:     0.9rem !important;
+    height:        var(--pill-h) !important;
+    padding:       0 1rem !important;
+    white-space:   nowrap !important;
+    transition:    background 0.15s ease !important;
+}
+.st-key-topnav button[kind="secondary"] *,
+.st-key-topnav button[kind="secondaryFormSubmit"] * {
+    color: var(--nav-text) !important;
+}
+.st-key-topnav button[kind="secondary"]:hover,
+.st-key-topnav button[kind="secondaryFormSubmit"]:hover {
+    background: var(--pill-bg-hover) !important;
+    color:      var(--nav-text) !important;
+    border:     none !important;
+}
+
+
+/* ==========================================================================
+   9. PAGE-SPECIFIC — Result Dashboard
+   --------------------------------------------------------------------------
+   Bolds the Dashboard's text. Moved here from pages/05_Dashboard.py, with
+   the original `.main` selector corrected to [data-testid="stMain"] --
+   Streamlit renamed that container, so `.main` had stopped matching and only
+   the summary table was actually being bolded.
+
+   Two things this selector has to do that the original didn't need to:
+
+     1. Stay Dashboard-only. This stylesheet is loaded app-wide, but stMain
+        exists on EVERY page -- so the rule is gated behind
+        :has(.page-dashboard), a marker 05_Dashboard.py emits. No marker on
+        the page, no bolding.
+     2. Leave the navbar alone. The navbar renders inside stMain too, and
+        this rule out-specifies its own font-weight: 500 (both are
+        !important, so specificity decides). Without the
+        :not(.st-key-topnav ...) exclusions the nav links would render bold
+        on the Dashboard but normal everywhere else.
+
+   To style another page, copy this pattern: emit a marker class from the
+   page, then gate the rules behind [data-testid="stMain"]:has(.your-marker).
+   ========================================================================== */
+[data-testid="stMain"]:has(.page-dashboard) p:not(.st-key-topnav p),
+[data-testid="stMain"]:has(.page-dashboard) h1:not(.st-key-topnav h1),
+[data-testid="stMain"]:has(.page-dashboard) h2:not(.st-key-topnav h2),
+[data-testid="stMain"]:has(.page-dashboard) h3:not(.st-key-topnav h3),
+[data-testid="stMain"]:has(.page-dashboard) label:not(.st-key-topnav label),
+[data-testid="stMain"]:has(.page-dashboard) div[data-testid="stTable"],
+[data-testid="stMain"]:has(.page-dashboard) div[data-testid="stMetricValue"] {
+    font-weight: bold !important;
+}

@@ -1,25 +1,25 @@
 # SmartBioPep frontend (Streamlit) container.
-# Build context must be the frontend/ folder itself, e.g.:
-#   docker build -t smartbiopep-frontend -f frontend/Dockerfile frontend
+# Build context must be the web_ui/ folder itself, e.g.:
+#   docker build -t smartbiopep-frontend -f web_ui/Dockerfile web_ui
 # (docker-compose.yml at the repo root already sets this up.)
 
 FROM python:3.11-slim
 
-WORKDIR /app/Demo_webapp/frontend
+WORKDIR /app/Demo_webapp/web_ui
 
 # Install deps first so this layer is cached unless requirements.txt changes.
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy everything in frontend/ into the image. .dockerignore still strips
+# Copy everything in web_ui/ into the image. .dockerignore still strips
 # __pycache__, .venv, .env, .claude/, and the _test_*.py scratch scripts.
 COPY .streamlit/ .streamlit/
 COPY . .
 
 # Talk to the API over the Docker network by service name, not localhost.
 # Override at `docker run`/compose time; this default only makes sense if
-# something else maps a container called "api" to this hostname.
-ENV SMARTBIOPEP_API_BASE_URL=http://api:8000
+# something else maps a container called "web_api" to this hostname.
+ENV SMARTBIOPEP_API_BASE_URL=http://web_api:8000
 
 EXPOSE 8501
 

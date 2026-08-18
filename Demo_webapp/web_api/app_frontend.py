@@ -39,7 +39,6 @@ import db
 import helper
 import stimulate
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Runs once when the API starts: make sure the .env account exists in
@@ -64,7 +63,6 @@ def get_owned_job_or_404(job_uuid: str, current_user: dict) -> dict:
         raise HTTPException(status_code=404, detail="Job not found")
     return row
 
-
 # -----------------------------------------------------------------------------------------
 # REQUEST MODELS
 # -----------------------------------------------------------------------------------------
@@ -77,11 +75,9 @@ class AnalyzePayload(BaseModel):
     # ml_models_id) without declaring each one -- they're stored as-is.
     model_config = {"extra": "allow"}
 
-
 class EmailPayload(BaseModel):
     job_uuid: str
     email: str
-
 
 # -----------------------------------------------------------------------------------------
 # 1. AUTHENTICATION (web_ui/pages/02_Login.py)
@@ -104,7 +100,6 @@ def login(username: str = Form(...), password: str = Form(...)):
         "username": user["username"],
     }
 
-
 @app.post("/logout")
 def logout(credentials: HTTPAuthorizationCredentials = Depends(auth.bearer_scheme)):
     """
@@ -123,7 +118,6 @@ def read_current_user(current_user: dict = Depends(auth.get_current_user)):
     """Returns the logged-in user -- lets the UI check whether a stored
     token is still valid."""
     return current_user
-
 
 # -----------------------------------------------------------------------------------------
 # 2. UPLOAD & SUBMISSION (web_ui/pages/03_Data_prep.py)
@@ -180,7 +174,6 @@ def submit_analysis(
         "message": "Job started",
     }
 
-
 # -----------------------------------------------------------------------------------------
 # 3. EMAIL NOTIFICATION (web_ui/pages/04_Job_status.py)
 # -----------------------------------------------------------------------------------------
@@ -227,7 +220,6 @@ def get_status(job_uuid: str, current_user: dict = Depends(auth.get_current_user
         "result_url": result_url,  # null until the email has gone out
     }
 
-
 # -----------------------------------------------------------------------------------------
 # 5. JOB RESULT -- statistics only (web_ui/pages/05_Dashboard.py)
 # -----------------------------------------------------------------------------------------
@@ -243,7 +235,6 @@ def get_job_result(job_uuid: str, current_user: dict = Depends(auth.get_current_
         "stat_files": helper.read_stat_files(row["output_result_path"]),
         "extra_params": row.get("extra_params") or {},
     }
-
 
 # -----------------------------------------------------------------------------------------
 # 6. SEQUENCE DOWNLOAD -- one bioactivity, on demand (web_ui/pages/05_Dashboard.py)

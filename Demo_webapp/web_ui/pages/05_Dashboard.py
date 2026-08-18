@@ -23,15 +23,11 @@ from state import ensure_projects_store, get_active_project, project_switcher, c
 
 st.set_page_config(page_title="Result Dashboard", layout="centered")
 
-# Global CSS to make all Streamlit UI text bold
-st.markdown("""
-    <style>
-        .main p, .main h1, .main h2, .main h3, .main label, 
-        div[data-testid="stTable"], div[data-testid="stMetricValue"] {
-            font-weight: bold !important;
-        }
-    </style>
-""", unsafe_allow_html=True)
+# This page's styling lives in assets/style.css (loaded app-wide by app.py),
+# under the "Result Dashboard" section. That stylesheet is shared by every
+# page, so the Dashboard-only rules there are gated behind this marker --
+# they apply to whichever page emits it, and nothing else.
+st.markdown('<div class="page-dashboard"></div>', unsafe_allow_html=True)
 
 require_login(next_page='pages/05_Dashboard.py')
 ensure_projects_store()
